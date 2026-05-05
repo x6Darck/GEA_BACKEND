@@ -2,6 +2,7 @@ package com.calendario.callapp.callapp_backend.config;
 
 import com.calendario.callapp.callapp_backend.entity.*;
 import com.calendario.callapp.callapp_backend.repository.*;
+import com.calendario.callapp.callapp_backend.service.impl.ArchivoServiceImpl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
