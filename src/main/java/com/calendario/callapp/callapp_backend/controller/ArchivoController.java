@@ -28,15 +28,24 @@ public class ArchivoController {
     @GetMapping("/archivos/public/{tokenAcceso}")
     public ResponseEntity<Resource> descargar(@PathVariable String tokenAcceso) {
         Resource recurso = archivoService.cargarPublicoComoRecurso(tokenAcceso);
-        String contentType = "application/octet-stream";
+        String contentType = null;
         try {
-            // Intentar detectar el tipo de contenido
-            contentType = java.nio.file.Files.probeContentType(java.nio.file.Paths.get(recurso.getURI()));
-            if (contentType == null) {
-                contentType = "application/octet-stream";
+            if (recurso instanceof org.springframework.core.io.UrlResource) {
+                contentType = java.nio.file.Files.probeContentType(java.nio.file.Paths.get(recurso.getURI()));
+            } else if (recurso instanceof org.springframework.core.io.ClassPathResource) {
+                // Para recursos en el classpath, usamos el nombre del archivo
+                String filename = recurso.getFilename();
+                if (filename != null) {
+                    if (filename.endsWith(".png")) contentType = "image/png";
+                    else if (filename.endsWith(".jpg") || filename.endsWith(".jpeg")) contentType = "image/jpeg";
+                }
             }
-        } catch (IOException e) {
-            // fallback
+        } catch (Exception e) {
+            // fallback a octet-stream si falla la detección
+        }
+        
+        if (contentType == null) {
+            contentType = "application/octet-stream";
         }
 
         return ResponseEntity.ok()

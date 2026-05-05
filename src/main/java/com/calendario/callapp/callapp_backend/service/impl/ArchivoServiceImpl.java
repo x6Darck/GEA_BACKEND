@@ -103,23 +103,39 @@ public class ArchivoServiceImpl {
     public Resource cargarPublicoComoRecurso(String tokenAcceso) {
         try {
             if (tokenAcceso == null || !tokenAcceso.matches("^[a-zA-Z0-9]{20,}$")) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Token de archivo invalido");
+                return cargarRecursoFallback();
             }
+            
             ArchivoAdjunto metadata = archivoAdjuntoRepository.findByTokenAccesoAndPublicoTrue(tokenAcceso)
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Archivo no encontrado"));
+                    .orElse(null);
+            
+            if (metadata == null) {
+                return cargarRecursoFallback();
+            }
 
             Path archivo = rootLocation.resolve(metadata.getNombreAlmacenado()).normalize();
             if (!archivo.startsWith(rootLocation)) {
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Acceso a archivo no permitido");
+                return cargarRecursoFallback();
             }
+            
             String archivoUri = Objects.requireNonNull(archivo.toUri()).toString();
             Resource recurso = new UrlResource(Objects.requireNonNull(archivoUri));
-            if (!recurso.exists()) {
-                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Archivo no encontrado");
+            
+            if (!recurso.exists() || !recurso.isReadable()) {
+                return cargarRecursoFallback();
             }
+            
             return recurso;
-        } catch (MalformedURLException ex) {
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "No fue posible cargar el archivo");
+        } catch (Exception ex) {
+            return cargarRecursoFallback();
+        }
+    }
+
+    private Resource cargarRecursoFallback() {
+        try {
+            return new org.springframework.core.io.ClassPathResource("static/assets/img/default-avatar.png");
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Recurso no encontrado y fallback fallido");
         }
     }
 
