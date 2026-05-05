@@ -31,6 +31,9 @@ public class DataInitializer implements CommandLineRunner {
     private final SolicitudAnuncioRepository solicitudAnuncioRepository;
     private final LugarFisicoRepository lugarFisicoRepository;
     private final PasswordEncoder passwordEncoder;
+    private final ArchivoAdjuntoRepository archivoAdjuntoRepository;
+    private final org.springframework.core.io.ResourceLoader resourceLoader;
+    private final ArchivoServiceImpl archivoService;
 
     @Override
     @Transactional
@@ -235,6 +238,64 @@ public class DataInitializer implements CommandLineRunner {
             if (rectoria != null) {
                 crearUsuario("Oficina Rectoría", "oficina@gmail.com", "1234", "Oficina", rectoria);
             }
+            
+            // Vincular fotos por defecto
+            vincularFotosPorDefecto();
+        }
+    }
+
+    private void vincularFotosPorDefecto() {
+        try {
+            String tokenAvatar = seedFile("static/assets/img/default-avatar.png", "avatar-sistema.png", "image/png");
+            if (tokenAvatar != null) {
+                usuarioRepository.findAll().forEach(u -> {
+                    if (u.getFotoUrl() == null || u.getFotoUrl().isBlank()) {
+                        u.setFotoUrl("/archivos/public/" + tokenAvatar);
+                        usuarioRepository.save(u);
+                    }
+                });
+            }
+        } catch (Exception e) {
+            log.error("No se pudieron vincular las fotos por defecto: {}", e.getMessage());
+        }
+    }
+
+    private String seedFile(String resourcePath, String targetName, String contentType) {
+        try {
+            org.springframework.core.io.Resource resource = resourceLoader.getResource("classpath:" + resourcePath);
+            if (!resource.exists()) return null;
+
+            // Evitar duplicados por nombre original
+            return archivoAdjuntoRepository.findByNombreOriginal(targetName)
+                .map(ArchivoAdjunto::getTokenAcceso)
+                .orElseGet(() -> {
+                    try {
+                        // Guardar físicamente si no existe
+                        java.nio.file.Path rootLocation = java.nio.file.Paths.get("uploads").toAbsolutePath().normalize();
+                        if (!java.nio.file.Files.exists(rootLocation)) {
+                            java.nio.file.Files.createDirectories(rootLocation);
+                        }
+                        
+                        String nombreAlmacenado = java.util.UUID.randomUUID() + "-" + targetName;
+                        java.nio.file.Path destino = rootLocation.resolve(nombreAlmacenado);
+                        java.nio.file.Files.copy(resource.getInputStream(), destino, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+
+                        ArchivoAdjunto meta = new ArchivoAdjunto();
+                        meta.setNombreOriginal(targetName);
+                        meta.setNombreAlmacenado(nombreAlmacenado);
+                        meta.setTokenAcceso(java.util.UUID.randomUUID().toString().replace("-", ""));
+                        meta.setContentType(contentType);
+                        meta.setTamano(resource.contentLength());
+                        meta.setPublico(true);
+                        meta.setFechaCreacion(LocalDateTime.now());
+                        return archivoAdjuntoRepository.save(meta).getTokenAcceso();
+                    } catch (Exception ex) {
+                        log.error("Error al copiar archivo de semilla {}: {}", targetName, ex.getMessage());
+                        return null;
+                    }
+                });
+        } catch (Exception e) {
+            return null;
         }
     }
 
@@ -279,6 +340,13 @@ public class DataInitializer implements CommandLineRunner {
                 evento.setTipoEventoCatalogo(academico);
                 evento.setEstado(EstadoSolicitud.APROBADA);
                 evento.setFechaCreacion(LocalDateTime.now());
+                
+                // Seed pieza gráfica para el evento de prueba
+                String tokenPieza = seedFile("static/assets/img/default-event.png", "evento-prueba.png", "image/png");
+                if (tokenPieza != null) {
+                    evento.setPiezaGraficaUrl("/archivos/public/" + tokenPieza);
+                }
+                
                 solicitudEventoRepository.save(evento);
 
                 // 2. Solicitud de Anuncio de Prueba

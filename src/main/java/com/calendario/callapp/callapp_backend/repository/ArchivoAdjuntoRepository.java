@@ -8,4 +8,5 @@ import java.util.Optional;
 public interface ArchivoAdjuntoRepository extends JpaRepository<ArchivoAdjunto, Long> {
 
     Optional<ArchivoAdjunto> findByTokenAccesoAndPublicoTrue(String tokenAcceso);
+    Optional<ArchivoAdjunto> findByNombreOriginal(String nombreOriginal);
 }

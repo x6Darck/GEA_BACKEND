@@ -115,14 +115,14 @@ public class ArchivoServiceImpl {
 
             Path archivo = rootLocation.resolve(metadata.getNombreAlmacenado()).normalize();
             if (!archivo.startsWith(rootLocation)) {
-                return cargarRecursoFallback();
+                return cargarRecursoFallback(metadata);
             }
             
             String archivoUri = Objects.requireNonNull(archivo.toUri()).toString();
             Resource recurso = new UrlResource(Objects.requireNonNull(archivoUri));
             
             if (!recurso.exists() || !recurso.isReadable()) {
-                return cargarRecursoFallback();
+                return cargarRecursoFallback(metadata);
             }
             
             return recurso;
@@ -131,12 +131,24 @@ public class ArchivoServiceImpl {
         }
     }
 
-    private Resource cargarRecursoFallback() {
+    private Resource cargarRecursoFallback(ArchivoAdjunto metadata) {
         try {
-            return new org.springframework.core.io.ClassPathResource("static/assets/img/default-avatar.png");
+            String path = "static/assets/img/default-event.png";
+            if (metadata != null) {
+                String nombre = metadata.getNombreOriginal().toLowerCase();
+                if (nombre.contains("avatar") || nombre.contains("foto") || nombre.contains("perfil") || 
+                    (metadata.getContentType() != null && metadata.getContentType().contains("image") && metadata.getTamano() < 500000)) {
+                    path = "static/assets/img/default-avatar.png";
+                }
+            }
+            return new org.springframework.core.io.ClassPathResource(path);
         } catch (Exception e) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Recurso no encontrado y fallback fallido");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Recurso no encontrado");
         }
+    }
+
+    private Resource cargarRecursoFallback() {
+        return cargarRecursoFallback(null);
     }
 
     private void validarArchivo(MultipartFile archivo) {
