@@ -121,7 +121,7 @@ public class SolicitudEventoServiceImpl {
         solicitud.setHoraFin(request.getHoraFin());
         if (request.getIdsLugaresFisicos() != null && !request.getIdsLugaresFisicos().isEmpty()) {
             solicitud.getLugaresFisicos().clear();
-            solicitud.getLugaresFisicos().addAll(lugarFisicoRepository.findAllById(request.getIdsLugaresFisicos()));
+            solicitud.getLugaresFisicos().addAll(lugarFisicoRepository.findAllById(Objects.requireNonNull(request.getIdsLugaresFisicos())));
         } else {
             solicitud.getLugaresFisicos().clear();
         }
@@ -155,7 +155,6 @@ public class SolicitudEventoServiceImpl {
         }
 
         // HALLAZGO AUDITORÍA: Limitar el número de instancias para evitar DoS
-        int contador = 0;
         final int MAX_INSTANCIAS = 100;
         
         // HALLAZGO AUDITORÍA: Resolver N+1 cargando conflictos por adelantado
@@ -889,7 +888,7 @@ public class SolicitudEventoServiceImpl {
 
         List<LugarFisico> lugaresSerie = null;
         if (request.getIdsLugaresFisicos() != null) {
-            lugaresSerie = lugarFisicoRepository.findAllById(request.getIdsLugaresFisicos());
+            lugaresSerie = lugarFisicoRepository.findAllById(Objects.requireNonNull(request.getIdsLugaresFisicos()));
         }
 
         for (SolicitudEvento s : serie) {

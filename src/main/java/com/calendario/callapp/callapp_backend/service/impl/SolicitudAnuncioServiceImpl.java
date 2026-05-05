@@ -10,7 +10,6 @@ import com.calendario.callapp.callapp_backend.entity.EstadoSolicitud;
 import com.calendario.callapp.callapp_backend.entity.Oficina;
 import com.calendario.callapp.callapp_backend.entity.PublicacionAnuncio;
 import com.calendario.callapp.callapp_backend.entity.SolicitudAnuncio;
-import com.calendario.callapp.callapp_backend.entity.LugarFisico;
 import com.calendario.callapp.callapp_backend.entity.Usuario;
 import com.calendario.callapp.callapp_backend.repository.LugarFisicoRepository;
 import com.calendario.callapp.callapp_backend.repository.OficinaRepository;
@@ -60,7 +59,7 @@ public class SolicitudAnuncioServiceImpl {
         solicitud.setCategoria(request.getCategoria());
         if (request.getIdsLugaresFisicos() != null && !request.getIdsLugaresFisicos().isEmpty()) {
             solicitud.getLugaresFisicos().clear();
-            solicitud.getLugaresFisicos().addAll(lugarFisicoRepository.findAllById(request.getIdsLugaresFisicos()));
+            solicitud.getLugaresFisicos().addAll(lugarFisicoRepository.findAllById(Objects.requireNonNull(request.getIdsLugaresFisicos())));
         }
         solicitud.setCorreoContacto(request.getCorreoContacto());
         solicitud.setResponsableAnuncio(request.getResponsableAnuncio());
@@ -104,7 +103,7 @@ public class SolicitudAnuncioServiceImpl {
         if (request.getCategoria() != null) solicitud.setCategoria(request.getCategoria());
         if (request.getIdsLugaresFisicos() != null) {
             solicitud.getLugaresFisicos().clear();
-            solicitud.getLugaresFisicos().addAll(lugarFisicoRepository.findAllById(request.getIdsLugaresFisicos()));
+            solicitud.getLugaresFisicos().addAll(lugarFisicoRepository.findAllById(Objects.requireNonNull(request.getIdsLugaresFisicos())));
         }
         if (request.getCorreoContacto() != null) solicitud.setCorreoContacto(request.getCorreoContacto());
         if (request.getResponsableAnuncio() != null) solicitud.setResponsableAnuncio(request.getResponsableAnuncio());
@@ -310,7 +309,7 @@ public class SolicitudAnuncioServiceImpl {
         if (request.getCategoria() != null) solicitud.setCategoria(request.getCategoria());
         if (request.getIdsLugaresFisicos() != null) {
             solicitud.getLugaresFisicos().clear();
-            solicitud.getLugaresFisicos().addAll(lugarFisicoRepository.findAllById(request.getIdsLugaresFisicos()));
+            solicitud.getLugaresFisicos().addAll(lugarFisicoRepository.findAllById(Objects.requireNonNull(request.getIdsLugaresFisicos())));
         }
         if (request.getCorreoContacto() != null) solicitud.setCorreoContacto(request.getCorreoContacto());
         if (request.getResponsableAnuncio() != null) solicitud.setResponsableAnuncio(request.getResponsableAnuncio());

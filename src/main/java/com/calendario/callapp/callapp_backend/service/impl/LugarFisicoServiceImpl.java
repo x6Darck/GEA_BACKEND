@@ -24,6 +24,9 @@ public class LugarFisicoServiceImpl implements LugarFisicoService {
 
     @Override
     public LugarFisicoResponse obtenerPorId(Long id) {
+        if (id == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "ID de lugar físico es obligatorio");
+        }
         return repository.findById(id)
                 .map(mapper::toResponse)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Lugar físico no encontrado"));
