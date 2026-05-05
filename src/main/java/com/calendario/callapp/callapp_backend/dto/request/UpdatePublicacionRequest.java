@@ -1,0 +1,44 @@
+package com.calendario.callapp.callapp_backend.dto.request;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@Builder
+@AllArgsConstructor
+@NoArgsConstructor
+public class UpdatePublicacionRequest {
+    private String tituloVisible;
+    private String descripcionVisible;
+    private String piezaGraficaUrl;
+    private java.util.List<Long> idsLugaresFisicos;
+
+    // Campos de Solicitud (Evento/Anuncio)
+    private String nombreEvento;
+    private String descripcionEvento;
+    private java.time.LocalDate fechaEvento;
+    private java.time.LocalTime horaInicio;
+    private java.time.LocalTime horaFin;
+    private String lugar;
+    private String linkConexion;
+    private String responsableEvento;
+    private String tipoEvento;
+    private Boolean requiereTransmision;
+    private Boolean requiereCubrimiento;
+    private String observaciones;
+    private Boolean esImportante;
+    private Boolean requierePiezaGrafica;
+
+    // Para Anuncios
+    private String titulo;
+    private String descripcion;
+    private String categoria;
+    private java.time.LocalDate fechaInicioPublicacion;
+    private java.time.LocalDate fechaFinPublicacion;
+    private String correoContacto;
+    private String responsableAnuncio;
+    private Long idOficina;
+    private java.util.List<SolicitudEventoParticipanteRequest> participantes;
+}

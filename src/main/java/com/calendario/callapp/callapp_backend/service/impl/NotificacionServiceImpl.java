@@ -1,0 +1,368 @@
+package com.calendario.callapp.callapp_backend.service.impl;
+
+import com.calendario.callapp.callapp_backend.entity.NotificacionEnviada;
+import com.calendario.callapp.callapp_backend.repository.NotificacionEnviadaRepository;
+import org.springframework.core.io.Resource;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.MimeMessageHelper;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.stereotype.Service;
+
+import jakarta.mail.internet.MimeMessage;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Set;
+import java.time.LocalDateTime;
+import java.time.LocalDate;
+
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class NotificacionServiceImpl {
+
+    private final JavaMailSender javaMailSender;
+    private final NotificacionEnviadaRepository notificacionEnviadaRepository;
+    private final PlantillaCorreoServiceImpl plantillaCorreoService;
+    private final ArchivoServiceImpl archivoService;
+
+    @Value("${app.notifications.email-enabled:false}")
+    private boolean emailEnabled;
+
+    @Value("${spring.mail.username:}")
+    private String mailUsername = "";
+
+    @Value("${app.notifications.university-recipients:}")
+    private String universityRecipients = "";
+
+    @Value("${app.mail.from-name:CallApp}")
+    private String mailFromName = "CallApp";
+
+    @Value("${app.frontend-base-url:http://localhost:5173}")
+    private String frontendBaseUrl = "http://localhost:5173";
+
+    @Async
+    public void notificarCreacionEvento(Long id, String titulo, String nombreSolicitante, String nombreOficina) {
+        log.info("Notificando NUEVA SOLICITUD de evento: id={}, titulo={}", id, titulo);
+        
+        Set<String> destinatarios = parseRecipients(universityRecipients);
+        if (destinatarios.isEmpty()) return;
+
+        enviarCorreo(
+                "NUEVA_SOLICITUD_EVENTO",
+                destinatarios,
+                "Nueva solicitud de evento: " + titulo,
+                plantillaCorreoService.render("nueva-solicitud.html", Map.of(
+                        "tipo", "Evento",
+                        "titulo", safe(titulo),
+                        "solicitante", safe(nombreSolicitante),
+                        "oficina", safe(nombreOficina),
+                        "fecha", LocalDateTime.now().toString(),
+                        "gestionUrl", frontendBaseUrl + "/revision-solicitudes")),
+                null);
+    }
+
+    @Async
+    public void notificarCreacionAnuncio(Long id, String titulo, String nombreSolicitante, String nombreOficina) {
+        log.info("Notificando NUEVA SOLICITUD de anuncio: id={}, titulo={}", id, titulo);
+        
+        Set<String> destinatarios = parseRecipients(universityRecipients);
+        if (destinatarios.isEmpty()) return;
+
+        enviarCorreo(
+                "NUEVA_SOLICITUD_ANUNCIO",
+                destinatarios,
+                "Nueva solicitud de anuncio: " + titulo,
+                plantillaCorreoService.render("nueva-solicitud.html", Map.of(
+                        "tipo", "Anuncio",
+                        "titulo", safe(titulo),
+                        "solicitante", safe(nombreSolicitante),
+                        "oficina", safe(nombreOficina),
+                        "fecha", LocalDateTime.now().toString(),
+                        "gestionUrl", frontendBaseUrl + "/revision-anuncios")),
+                null);
+    }
+
+    @Async
+    public void notificarPublicacionEvento(Long publicacionId, String titulo, String descripcion, String fechaEvento, String horaInicio, String horaFin, String lugar, String tipoEvento, String responsable, String oficina, String piezaGraficaUrl, String correoSolicitante) {
+        log.info("Iniciando proceso de notificacion para EVENTO publicado: id={}, titulo={}", publicacionId, titulo);
+
+        Set<String> destinatarios = new LinkedHashSet<>();
+        if (correoSolicitante != null && !correoSolicitante.isBlank()) {
+            destinatarios.add(correoSolicitante);
+        }
+
+        Set<String> backendRecipients = parseRecipients(universityRecipients);
+        destinatarios.addAll(backendRecipients);
+
+        log.info("Destinatarios finales para evento: {}", destinatarios);
+
+        String horario = (horaInicio != null ? horaInicio : "") + " - " + (horaFin != null ? horaFin : "");
+
+        enviarCorreo(
+                "EVENTO_PUBLICADO",
+                destinatarios,
+                "Evento publicado: " + titulo,
+                plantillaCorreoService.render("evento-publicado.html", Map.of(
+                        "titulo", safe(titulo),
+                        "descripcion", safe(descripcion),
+                        "fechaEvento", safe(fechaEvento),
+                        "horario", safe(horario),
+                        "lugar", safe(lugar),
+                        "tipoEvento", safe(tipoEvento),
+                        "responsable", safe(responsable),
+                        "oficina", safe(oficina),
+                        "piezaUrl", safe(piezaGraficaUrl),
+                        "detalleUrl", frontendBaseUrl + "/calendario?evento=" + publicacionId)),
+                piezaGraficaUrl);
+    }
+
+    @Async
+    public void notificarPublicacionAnuncio(Long publicacionId, String titulo, String descripcion, String categoria, String vigencia, String lugar, String responsable, String piezaGraficaUrl, String correoSolicitante, String correoContacto) {
+        log.info("Iniciando proceso de notificacion para ANUNCIO publicado: id={}, titulo={}", publicacionId, titulo);
+
+        Set<String> destinatarios = new LinkedHashSet<>();
+        if (correoSolicitante != null && !correoSolicitante.isBlank()) {
+            destinatarios.add(correoSolicitante);
+        }
+        if (correoContacto != null && !correoContacto.isBlank()) {
+            destinatarios.add(correoContacto);
+        }
+
+        Set<String> backendRecipients = parseRecipients(universityRecipients);
+        destinatarios.addAll(backendRecipients);
+
+        log.info("Destinatarios finales para anuncio: {}", destinatarios);
+
+        enviarCorreo(
+                "ANUNCIO_PUBLICADO",
+                destinatarios,
+                "Anuncio publicado: " + titulo,
+                plantillaCorreoService.render("anuncio-publicado.html", Map.of(
+                        "titulo", safe(titulo),
+                        "descripcion", safe(descripcion),
+                        "categoria", safe(categoria),
+                        "vigencia", safe(vigencia),
+                        "lugar", safe(lugar),
+                        "responsable", safe(responsable),
+                        "contacto", safe(correoContacto),
+                        "piezaUrl", safe(piezaGraficaUrl),
+                        "detalleUrl", frontendBaseUrl + "/calendario?anuncio=" + publicacionId)),
+                piezaGraficaUrl);
+    }
+
+    @Async
+    public void notificarRechazoEvento(String nombreEvento, String motivoRechazo, String correoSolicitante) {
+        log.info("Notificando RECHAZO de evento: titulo={}", nombreEvento);
+        
+        if (correoSolicitante == null || correoSolicitante.isBlank()) return;
+
+        enviarCorreo(
+                "EVENTO_RECHAZADO",
+                Set.of(correoSolicitante),
+                "Solicitud de evento rechazada: " + nombreEvento,
+                plantillaCorreoService.render("solicitud-rechazada.html", Map.of(
+                        "titulo", safe(nombreEvento),
+                        "motivo", safe(motivoRechazo),
+                        "gestionUrl", frontendBaseUrl + "/mis-solicitudes")),
+                null);
+    }
+
+    @Async
+    public void notificarAprobacionEvento(String nombreEvento, String correoSolicitante) {
+        log.info("Notificando APROBACION de evento: titulo={}", nombreEvento);
+        
+        if (correoSolicitante == null || correoSolicitante.isBlank()) return;
+
+        enviarCorreo(
+                "EVENTO_APROBADO",
+                Set.of(correoSolicitante),
+                "Solicitud de evento aprobada: " + nombreEvento,
+                plantillaCorreoService.render("solicitud-aprobada.html", Map.of(
+                        "titulo", safe(nombreEvento),
+                        "gestionUrl", frontendBaseUrl + "/mis-solicitudes")),
+                null);
+    }
+
+    @Async
+    public void notificarRechazoAnuncio(String titulo, String motivoRechazo, String correoSolicitante) {
+        log.info("Notificando RECHAZO de anuncio: titulo={}", titulo);
+        
+        if (correoSolicitante == null || correoSolicitante.isBlank()) return;
+
+        enviarCorreo(
+                "ANUNCIO_RECHAZADO",
+                Set.of(correoSolicitante),
+                "Solicitud de anuncio rechazada: " + titulo,
+                plantillaCorreoService.render("solicitud-rechazada.html", Map.of(
+                        "titulo", safe(titulo),
+                        "motivo", safe(motivoRechazo),
+                        "gestionUrl", frontendBaseUrl + "/mis-anuncios")),
+                null);
+    }
+
+    @Async
+    public void notificarAprobacionAnuncio(String titulo, String correoSolicitante) {
+        log.info("Notificando APROBACION de anuncio: titulo={}", titulo);
+        
+        if (correoSolicitante == null || correoSolicitante.isBlank()) return;
+
+        enviarCorreo(
+                "ANUNCIO_APROBADO",
+                Set.of(correoSolicitante),
+                "Solicitud de anuncio aprobada: " + titulo,
+                plantillaCorreoService.render("solicitud-aprobada.html", Map.of(
+                        "titulo", safe(titulo),
+                        "gestionUrl", frontendBaseUrl + "/mis-anuncios")),
+                null);
+    }
+
+    public void enviarCorreoPruebaEvento(String destinatario, String titulo, String lugar, String oficina) {
+        String tituloSeguro = safe(titulo).isBlank() ? "Evento de prueba CallApp" : safe(titulo);
+        String lugarSeguro = safe(lugar).isBlank() ? "Auditorio principal" : safe(lugar);
+        String oficinaSegura = safe(oficina).isBlank() ? "Comunicaciones" : safe(oficina);
+
+        enviarCorreo(
+                "EVENTO_PRUEBA",
+                Set.of(destinatario),
+                "Prueba de correo: " + tituloSeguro,
+                plantillaCorreoService.render("evento-publicado.html", Map.of(
+                        "titulo", tituloSeguro,
+                        "fechaEvento", LocalDate.now().toString(),
+                        "lugar", lugarSeguro,
+                        "oficina", oficinaSegura,
+                        "piezaUrl", "",
+                        "detalleUrl", frontendBaseUrl + "/calendario")),
+                null);
+    }
+
+    private void enviarCorreo(String tipo, Set<String> destinatarios, String asunto, String cuerpo, String piezaGraficaUrl) {
+        Set<String> destinatariosLimpios = new LinkedHashSet<>(destinatarios);
+        destinatariosLimpios.removeIf(item -> item == null || item.isBlank());
+
+        log.info("Procesando envio de correo tipo {}. Habilitado={}, Host-Configurado={}",
+                tipo, emailEnabled, (mailUsername != null && !mailUsername.isBlank()));
+
+        if (!emailEnabled) {
+            log.info("Notificaciones por correo desactivadas globalmente. Se omite envio para asunto: {}", asunto);
+            registrarNotificacion(tipo, destinatariosLimpios, asunto, false, "EMAIL_DESACTIVADO");
+            return;
+        }
+
+        if (mailUsername == null || mailUsername.isBlank() || mailUsername.startsWith("tu_correo")) {
+            log.warn("SMTP no configurado (usuario: {}). Se omite envio para asunto: {}", mailUsername, asunto);
+            registrarNotificacion(tipo, destinatariosLimpios, asunto, false, "SMTP_NO_CONFIGURADO");
+            return;
+        }
+
+        if (destinatariosLimpios.isEmpty()) {
+            log.warn("No hay destinatarios validos para la notificacion: {}", asunto);
+            registrarNotificacion(tipo, destinatariosLimpios, asunto, false, "SIN_DESTINATARIOS");
+            return;
+        }
+
+        try {
+            log.info("Preparando mensaje MIME para destinatarios: {}", destinatariosLimpios);
+            MimeMessage message = javaMailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, StandardCharsets.UTF_8.name());
+
+            String fromAddress = mailUsername;
+            String fromName = mailFromName;
+            String[] toAddresses = destinatariosLimpios.toArray(new String[0]);
+
+            String safeFrom = (fromAddress != null && !fromAddress.isBlank()) ? fromAddress : "unknown@callapp.com";
+            String safeFromName = (fromName != null && !fromName.isBlank()) ? fromName : "CallApp";
+            
+            helper.setFrom(safeFrom, safeFromName);
+            helper.setTo(toAddresses != null ? toAddresses : new String[0]);
+            helper.setSubject(asunto != null ? asunto : "Sin asunto");
+            helper.setText(cuerpo != null ? cuerpo : "", true);
+
+            if (piezaGraficaUrl != null && piezaGraficaUrl.contains("/archivos/public/")) {
+                try {
+                    String token = piezaGraficaUrl.substring(piezaGraficaUrl.lastIndexOf('/') + 1);
+                    Resource recurso = archivoService.cargarPublicoComoRecurso(token);
+                    if (recurso != null && recurso.exists()) {
+                        String fileName = recurso.getFilename() != null ? recurso.getFilename() : "pieza_grafica.png";
+                        
+                        // Determinar si es imagen para usar inline o attachment
+                        String contentType = Files.probeContentType(recurso.getFile().toPath());
+                        
+                        // Fallback manual si el sistema no reconoce la extension (comun en Windows)
+                        if (contentType == null && fileName != null) {
+                            String lowerName = fileName.toLowerCase();
+                            if (lowerName.endsWith(".png") || lowerName.endsWith(".jpg") || 
+                                lowerName.endsWith(".jpeg") || lowerName.endsWith(".gif") || 
+                                lowerName.endsWith(".webp")) {
+                                contentType = "image/" + (lowerName.endsWith(".png") ? "png" : "jpeg");
+                            }
+                        }
+
+                        if (contentType != null && contentType.startsWith("image/")) {
+                            helper.addInline("piezaGrafica", recurso);
+                            log.info("Imagen incrustada (inline) en el correo: {} (Type: {})", fileName, contentType);
+                        } else {
+                            helper.addAttachment(java.util.Objects.requireNonNull(fileName), recurso);
+                            log.info("Adjunto añadido al correo: {} (Type: {})", fileName, contentType);
+                        }
+                    }
+                } catch (Exception ex) {
+                    log.warn("No se pudo procesar la pieza grafica para el correo: {}", ex.getMessage());
+                }
+            }
+
+            log.info("Enviando correo vía SMTP...");
+            javaMailSender.send(message);
+            log.info("¡Correo enviado con exito para asunto: {}!", asunto);
+
+            registrarNotificacion(tipo, destinatariosLimpios, asunto, true, null);
+        } catch (Exception ex) {
+            log.error("Error critico al enviar correo '{}' a {}: {}", asunto, destinatariosLimpios, ex.getMessage(), ex);
+            registrarNotificacion(tipo, destinatariosLimpios, asunto, false, ex.getMessage());
+        }
+    }
+
+    private Set<String> parseRecipients(String rawRecipients) {
+        if (rawRecipients == null || rawRecipients.isBlank()) {
+            return Set.of();
+        }
+        return Arrays.stream(rawRecipients.split(","))
+                .map(String::trim)
+                .filter(item -> !item.isBlank())
+                .collect(LinkedHashSet::new, Set::add, Set::addAll);
+    }
+
+    private void registrarNotificacion(String tipo, Set<String> destinatarios, String asunto, boolean exito,
+            String detalleError) {
+        NotificacionEnviada notificacion = new NotificacionEnviada();
+        notificacion.setTipo(tipo);
+        notificacion.setDestinatarios(String.join(",", destinatarios));
+        notificacion.setAsunto(asunto);
+        notificacion.setFechaEnvio(LocalDateTime.now());
+        notificacion.setExito(exito);
+        notificacion.setDetalleError(detalleError);
+        notificacionEnviadaRepository.save(notificacion);
+    }
+
+    void configurarParaPruebas(
+            boolean emailEnabled,
+            String mailUsername,
+            String mailFromName,
+            String frontendBaseUrl,
+            String universityRecipients) {
+        this.emailEnabled = emailEnabled;
+        this.mailUsername = mailUsername;
+        this.mailFromName = mailFromName;
+        this.frontendBaseUrl = frontendBaseUrl;
+        this.universityRecipients = universityRecipients;
+    }
+
+    private String safe(String valor) {
+        return valor == null ? "" : valor;
+    }
+}
