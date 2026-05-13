@@ -1,0 +1,46 @@
+services:
+  db:
+    image: mysql:8.0
+    container_name: gea_db
+    environment:
+      MYSQL_ROOT_PASSWORD: 1234
+      MYSQL_DATABASE: gea_db
+    ports:
+      - "3307:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./gea_db_dump.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gea_backend
+    environment:
+      - SERVER_PORT=8080
+      - SPRING_DATASOURCE_URL=jdbc:mysql://db:3306/gea_db?useSSL=false&serverTimezone=America/Bogota&allowPublicKeyRetrieval=true&characterEncoding=UTF-8
+      - DB_USERNAME=root
+      - DB_PASSWORD=1234
+      - CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:5174,http://localhost:3000,http://localhost
+      # Mantenemos las demas variables con valores por defecto o pasamos desde un .env en prod
+      - JWT_SECRET=change_me_in_production_12345678901234567890123456789012
+    ports:
+      - "8083:8080"
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ../../Proyecto 2/GEA_FRONT
+      dockerfile: Dockerfile
+    container_name: gea_frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  db_data:

@@ -2,7 +2,6 @@ package com.calendario.callapp.callapp_backend.config;
 
 import com.calendario.callapp.callapp_backend.entity.*;
 import com.calendario.callapp.callapp_backend.repository.*;
-import com.calendario.callapp.callapp_backend.service.impl.ArchivoServiceImpl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
@@ -34,7 +33,6 @@ public class DataInitializer implements CommandLineRunner {
     private final PasswordEncoder passwordEncoder;
     private final ArchivoAdjuntoRepository archivoAdjuntoRepository;
     private final org.springframework.core.io.ResourceLoader resourceLoader;
-    private final ArchivoServiceImpl archivoService;
 
     @Override
     @Transactional
