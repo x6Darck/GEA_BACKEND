@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 @RestController
-@RequestMapping("/lugares-fisicos")
+@RequestMapping("/api/lugares-fisicos")
 @RequiredArgsConstructor
 public class LugarFisicoController {
 

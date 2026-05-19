@@ -52,12 +52,12 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/auth/**", "/api/auth/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/app/eventos/publicados/**", "/app/anuncios/publicados/**", "/archivos/public/**").permitAll()
-                .requestMatchers("/lugares-fisicos/**").authenticated()
+                .requestMatchers("/api/lugares-fisicos/**").authenticated()
                 .requestMatchers("/admin/**").hasAnyRole("SUPER_ADMIN", "ADMIN")
                 .requestMatchers("/comunicaciones/archivos/upload").hasAnyRole("SUPER_ADMIN", "ADMIN", "COMUNICACIONES", "OFICINA", "USUARIO_AUTENTICADO_APP")
                 .requestMatchers("/comunicaciones/**").hasAnyRole("SUPER_ADMIN", "ADMIN", "COMUNICACIONES")
                 .requestMatchers("/oficina/**").hasAnyRole("SUPER_ADMIN", "ADMIN", "COMUNICACIONES", "OFICINA")
-                .requestMatchers("/app/solicitudes-anuncio/**").hasAnyRole("USUARIO_AUTENTICADO_APP", "SUPER_ADMIN", "ADMIN", "COMUNICACIONES", "OFICINA")
+                .requestMatchers("/app/solicitudes-anuncio/**").hasAnyRole("USUARIO_AUTENTICADO_APP", "SUPER_ADMIN", "ADMIN", "COMUNICACIONES", "OFICINA", "USUARIO_APP")
                 .requestMatchers("/reportes/**").authenticated()
                 .requestMatchers("/usuario/**").hasAnyRole(
                         "SUPER_ADMIN", "ADMIN", "COMUNICACIONES", "OFICINA", "USUARIO_APP", "USUARIO_AUTENTICADO_APP"
