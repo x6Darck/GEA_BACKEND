@@ -42,7 +42,7 @@ public class SolicitudAnuncio extends BaseEntity {
     @Column(length = 100)
     private String categoria;
 
-    @ManyToMany(fetch = FetchType.LAZY)
+    @ManyToMany(fetch = FetchType.LAZY, cascade = {jakarta.persistence.CascadeType.PERSIST, jakarta.persistence.CascadeType.MERGE})
     @JoinTable(
         name = "solicitud_anuncio_lugares",
         joinColumns = @JoinColumn(name = "id_solicitud_anuncio"),

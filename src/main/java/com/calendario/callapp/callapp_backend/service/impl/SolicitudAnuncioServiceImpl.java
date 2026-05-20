@@ -48,8 +48,10 @@ public class SolicitudAnuncioServiceImpl {
         Usuario usuario = obtenerUsuario(authentication);
         
         Oficina oficina = usuario.getOficina();
-        // Lógica de oficina para creación: si no tiene oficina (admin), buscar una o error
-        if (oficina == null && (usuario.getRol().esAdministradorGlobal() || usuario.getRol().esComunicaciones())) {
+        // Lógica de oficina para creación: si es estudiante, forzar nulo. Si es admin/comms sin oficina, asignar la primera.
+        if (usuario.getRol() == com.calendario.callapp.callapp_backend.entity.Rol.USUARIO_AUTENTICADO_APP) {
+            oficina = null;
+        } else if (oficina == null && (usuario.getRol().esAdministradorGlobal() || usuario.getRol().esComunicaciones())) {
             oficina = oficinaRepository.findAll().stream().findFirst().orElse(null);
         }
 
@@ -58,8 +60,9 @@ public class SolicitudAnuncioServiceImpl {
         solicitud.setDescripcion(request.getDescripcion());
         solicitud.setCategoria(request.getCategoria());
         if (request.getIdsLugaresFisicos() != null && !request.getIdsLugaresFisicos().isEmpty()) {
+            java.util.List<Long> idsSeguros = request.getIdsLugaresFisicos().stream().map(Number::longValue).toList();
             solicitud.getLugaresFisicos().clear();
-            solicitud.getLugaresFisicos().addAll(lugarFisicoRepository.findAllById(Objects.requireNonNull(request.getIdsLugaresFisicos())));
+            solicitud.getLugaresFisicos().addAll(lugarFisicoRepository.findAllById(java.util.Objects.requireNonNull(idsSeguros)));
         }
         solicitud.setCorreoContacto(request.getCorreoContacto());
         solicitud.setResponsableAnuncio(request.getResponsableAnuncio());
@@ -102,8 +105,9 @@ public class SolicitudAnuncioServiceImpl {
         if (request.getDescripcion() != null) solicitud.setDescripcion(request.getDescripcion());
         if (request.getCategoria() != null) solicitud.setCategoria(request.getCategoria());
         if (request.getIdsLugaresFisicos() != null) {
+            java.util.List<Long> idsSeguros = request.getIdsLugaresFisicos().stream().map(Number::longValue).toList();
             solicitud.getLugaresFisicos().clear();
-            solicitud.getLugaresFisicos().addAll(lugarFisicoRepository.findAllById(Objects.requireNonNull(request.getIdsLugaresFisicos())));
+            solicitud.getLugaresFisicos().addAll(lugarFisicoRepository.findAllById(java.util.Objects.requireNonNull(idsSeguros)));
         }
         if (request.getCorreoContacto() != null) solicitud.setCorreoContacto(request.getCorreoContacto());
         if (request.getResponsableAnuncio() != null) solicitud.setResponsableAnuncio(request.getResponsableAnuncio());

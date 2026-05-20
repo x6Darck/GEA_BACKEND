@@ -40,6 +40,9 @@ public class NotificacionServiceImpl {
     @Value("${app.notifications.university-recipients:}")
     private String universityRecipients = "";
 
+    @Value("${app.notifications.published-recipients:}")
+    private String publishedRecipients = "";
+
     @Value("${app.mail.from-name:CallApp}")
     private String mailFromName = "CallApp";
 
@@ -100,6 +103,9 @@ public class NotificacionServiceImpl {
         Set<String> backendRecipients = parseRecipients(universityRecipients);
         destinatarios.addAll(backendRecipients);
 
+        Set<String> massRecipients = parseRecipients(publishedRecipients);
+        destinatarios.addAll(massRecipients);
+
         log.info("Destinatarios finales para evento: {}", destinatarios);
 
         String horario = (horaInicio != null ? horaInicio : "") + " - " + (horaFin != null ? horaFin : "");
@@ -136,6 +142,9 @@ public class NotificacionServiceImpl {
 
         Set<String> backendRecipients = parseRecipients(universityRecipients);
         destinatarios.addAll(backendRecipients);
+
+        Set<String> massRecipients = parseRecipients(publishedRecipients);
+        destinatarios.addAll(massRecipients);
 
         log.info("Destinatarios finales para anuncio: {}", destinatarios);
 
@@ -279,7 +288,18 @@ public class NotificacionServiceImpl {
             String safeFromName = (fromName != null && !fromName.isBlank()) ? fromName : "CallApp";
             
             helper.setFrom(safeFrom, safeFromName);
-            helper.setTo(toAddresses != null ? toAddresses : new String[0]);
+            if (toAddresses != null && toAddresses.length > 0) {
+                // Usar copia oculta (BCC) solo para notificaciones masivas para proteger la privacidad
+                if ("EVENTO_PUBLICADO".equals(tipo) || "ANUNCIO_PUBLICADO".equals(tipo)) {
+                    helper.setTo(safeFrom); // El "Para" principal es el propio sistema
+                    helper.setBcc(toAddresses); // Copia oculta a todos
+                } else {
+                    // Para notificaciones directas (aprobado, rechazado, nueva solicitud), enviarlo directamente al 'Para'
+                    helper.setTo(toAddresses);
+                }
+            } else {
+                helper.setTo(safeFrom);
+            }
             helper.setSubject(asunto != null ? asunto : "Sin asunto");
             helper.setText(cuerpo != null ? cuerpo : "", true);
 

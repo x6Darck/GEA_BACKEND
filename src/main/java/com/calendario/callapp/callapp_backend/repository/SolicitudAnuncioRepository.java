@@ -11,14 +11,14 @@ import java.util.List;
 
 public interface SolicitudAnuncioRepository extends JpaRepository<SolicitudAnuncio, Long> {
 
-    @Query("SELECT s FROM SolicitudAnuncio s LEFT JOIN FETCH s.usuarioSolicitante u LEFT JOIN FETCH u.oficina WHERE s.id = :id")
+    @Query("SELECT s FROM SolicitudAnuncio s LEFT JOIN FETCH s.usuarioSolicitante u LEFT JOIN FETCH u.oficina LEFT JOIN FETCH s.lugaresFisicos WHERE s.id = :id")
     java.util.Optional<SolicitudAnuncio> getByIdOptimized(@Param("id") Long id);
 
-    @Query("SELECT s FROM SolicitudAnuncio s LEFT JOIN FETCH s.usuarioSolicitante u LEFT JOIN FETCH u.oficina LEFT JOIN FETCH s.oficina " +
+    @Query("SELECT DISTINCT s FROM SolicitudAnuncio s LEFT JOIN FETCH s.usuarioSolicitante u LEFT JOIN FETCH u.oficina LEFT JOIN FETCH s.oficina LEFT JOIN FETCH s.lugaresFisicos " +
            "WHERE s.oficina.id = :oficinaId OR (s.oficina IS NULL AND u.oficina.id = :oficinaId) ORDER BY s.fechaCreacion DESC")
     List<SolicitudAnuncio> getAllByOficinaIdOptimized(@Param("oficinaId") Long oficinaId);
 
-    @Query("SELECT s FROM SolicitudAnuncio s LEFT JOIN FETCH s.usuarioSolicitante u LEFT JOIN FETCH u.oficina ORDER BY s.fechaCreacion DESC")
+    @Query("SELECT DISTINCT s FROM SolicitudAnuncio s LEFT JOIN FETCH s.usuarioSolicitante u LEFT JOIN FETCH u.oficina LEFT JOIN FETCH s.lugaresFisicos ORDER BY s.fechaCreacion DESC")
     List<SolicitudAnuncio> getAllUniqueWithAssociations();
 
     long countByEstado(EstadoSolicitud estado);
