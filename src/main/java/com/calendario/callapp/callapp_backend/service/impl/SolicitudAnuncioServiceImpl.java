@@ -221,6 +221,7 @@ public class SolicitudAnuncioServiceImpl {
         publicacion.setUsuarioPublicador(publicador);
 
         solicitud.setEstado(EstadoSolicitud.PUBLICADA);
+        solicitud.setPiezaGraficaUrl(publicacion.getPiezaGraficaUrl());
         solicitudAnuncioRepository.save(solicitud);
 
         PublicacionAnuncio guardada = publicacionAnuncioRepository.save(publicacion);
@@ -395,7 +396,12 @@ public class SolicitudAnuncioServiceImpl {
     private SolicitudAnuncioResponse enrichResponse(SolicitudAnuncioResponse response) {
         if (response == null) return null;
         publicacionAnuncioRepository.findBySolicitudAnuncioId(response.getId())
-                .ifPresent(p -> response.setVisible(p.getVisible()));
+                .ifPresent(p -> {
+                    response.setVisible(p.getVisible());
+                    if (response.getPiezaGraficaUrl() == null || response.getPiezaGraficaUrl().isBlank()) {
+                        response.setPiezaGraficaUrl(p.getPiezaGraficaUrl());
+                    }
+                });
         return response;
     }
 
@@ -405,14 +411,24 @@ public class SolicitudAnuncioServiceImpl {
         List<Long> ids = responses.stream().map(SolicitudAnuncioResponse::getId).toList();
         List<PublicacionAnuncio> publicaciones = publicacionAnuncioRepository.findBySolicitudAnuncioIdIn(ids);
 
-        java.util.Map<Long, Boolean> visibilityMap = publicaciones.stream()
+        java.util.Map<Long, PublicacionAnuncio> publicationMap = publicaciones.stream()
                 .collect(java.util.stream.Collectors.toMap(
                         p -> p.getSolicitudAnuncio().getId(),
-                        PublicacionAnuncio::getVisible,
-                        (v1, v2) -> v1
+                        p -> p,
+                        (p1, p2) -> p1
                 ));
 
-        responses.forEach(r -> r.setVisible(visibilityMap.getOrDefault(r.getId(), false)));
+        responses.forEach(r -> {
+            PublicacionAnuncio p = publicationMap.get(r.getId());
+            if (p != null) {
+                r.setVisible(p.getVisible());
+                if (r.getPiezaGraficaUrl() == null || r.getPiezaGraficaUrl().isBlank()) {
+                    r.setPiezaGraficaUrl(p.getPiezaGraficaUrl());
+                }
+            } else {
+                r.setVisible(false);
+            }
+        });
         return responses;
     }
 }

@@ -8,6 +8,7 @@ import com.calendario.callapp.callapp_backend.repository.UsuarioRepository;
 import com.calendario.callapp.callapp_backend.security.JwtService;
 import com.calendario.callapp.callapp_backend.service.AuthService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -16,6 +17,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AuthServiceImpl implements AuthService {
 
     private final UsuarioRepository usuarioRepository;
@@ -26,23 +28,26 @@ public class AuthServiceImpl implements AuthService {
     @Transactional(readOnly = true)
     public AuthResponse login(AuthRequest request) {
 
-        // 🔍 Buscar usuario por correo
-        Usuario usuario = usuarioRepository.getByCorreoOptimized(request.getCorreo())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Correo o contraseña incorrectos"));
+        String correo = request.getCorreo();
+        Usuario usuario = usuarioRepository.getByCorreoOptimized(correo).orElse(null);
 
-
-        // 🔐 Validar estado
-        if (!"ACTIVO".equalsIgnoreCase(usuario.getEstado())) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Tu cuenta está inactiva. Contacta al administrador.");
-        }
-
-        // 🔐 Validar contraseña
-        if (!passwordEncoder.matches(request.getPassword(), usuario.getPassword())) {
+        if (usuario == null) {
+            log.warn("Intento de login fallido - correo no registrado: {}", correo);
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Correo o contraseña incorrectos");
         }
 
-        // 🎟️ Generar token JWT
+        if (!"ACTIVO".equalsIgnoreCase(usuario.getEstado())) {
+            log.warn("Intento de login con cuenta inactiva: {}", correo);
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Tu cuenta está inactiva. Contacta al administrador.");
+        }
+
+        if (!passwordEncoder.matches(request.getPassword(), usuario.getPassword())) {
+            log.warn("Intento de login fallido - contraseña incorrecta para: {}", correo);
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Correo o contraseña incorrectos");
+        }
+
         String token = jwtService.generarToken(usuario);
+        log.info("Login exitoso: {} [{}]", correo, usuario.getRol());
         
         Oficina oficina = usuario.getOficina();
         Long idOficina = oficina != null ? oficina.getId() : null;

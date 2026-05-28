@@ -8,6 +8,7 @@ import com.calendario.callapp.callapp_backend.repository.RolRepository;
 import com.calendario.callapp.callapp_backend.repository.UsuarioRepository;
 import com.calendario.callapp.callapp_backend.security.JwtService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -21,6 +22,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class MicrosoftAuthServiceImpl {
 
     private final UsuarioRepository usuarioRepository;
@@ -57,6 +59,7 @@ public class MicrosoftAuthServiceImpl {
 
         Usuario usuario = usuarioRepository.getByCorreoOptimized(correo).orElseGet(Usuario::new);
         if (usuario.getId() == null) {
+            log.info("Creando nuevo usuario desde Microsoft OAuth: {}", correo);
             usuario.setCorreo(correo);
             usuario.setNombre(nombre != null && !nombre.isBlank() ? nombre : correo);
             usuario.setPassword(UUID.randomUUID().toString());
@@ -65,10 +68,11 @@ public class MicrosoftAuthServiceImpl {
             usuario.setRolEntity(rolRepository.findByNombre("Usuario Autenticado").orElse(null));
             usuario.setAuthProvider(AuthProvider.MICROSOFT);
         } else {
-            // 🔐 Validar estado para usuarios existentes
             if (!"ACTIVO".equalsIgnoreCase(usuario.getEstado())) {
+                log.warn("Login Microsoft rechazado - cuenta inactiva: {}", correo);
                 throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Tu cuenta está inactiva. Contacta al administrador.");
             }
+            log.info("Login Microsoft exitoso: {}", correo);
         }
 
         usuario.setMicrosoftOid(oid);

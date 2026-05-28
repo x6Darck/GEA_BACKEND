@@ -12,6 +12,7 @@ import org.hibernate.envers.DefaultRevisionEntity;
 import org.hibernate.envers.RevisionType;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
@@ -27,14 +28,17 @@ public class AuditoriaServiceImpl {
 
     private final EntityManager entityManager;
 
+    @Transactional(readOnly = true)
     public List<AuditoriaRevisionResponse> historialUsuarios(Long id) {
         return historial(id, Usuario.class, usuario -> "Usuario " + usuario.getCorreo());
     }
 
+    @Transactional(readOnly = true)
     public List<AuditoriaRevisionResponse> historialSolicitudesEvento(Long id) {
         return historial(id, SolicitudEvento.class, evento -> "Solicitud evento " + evento.getNombreEvento() + " [" + evento.getEstado() + "]");
     }
 
+    @Transactional(readOnly = true)
     public List<AuditoriaRevisionResponse> historialSolicitudesAnuncio(Long id) {
         return historial(id, SolicitudAnuncio.class, anuncio -> "Solicitud anuncio " + anuncio.getTitulo() + " [" + anuncio.getEstado() + "]");
     }

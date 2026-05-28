@@ -21,7 +21,12 @@ import lombok.Getter;
 import lombok.Setter;
 
 @Entity
-@Table(name = "solicitudes_evento")
+@Table(name = "solicitudes_evento", indexes = {
+    @jakarta.persistence.Index(name = "idx_solicitud_evento_estado", columnList = "estado"),
+    @jakarta.persistence.Index(name = "idx_solicitud_evento_oficina", columnList = "id_oficina"),
+    @jakarta.persistence.Index(name = "idx_solicitud_evento_fecha", columnList = "fecha_evento"),
+    @jakarta.persistence.Index(name = "idx_solicitud_evento_grupo", columnList = "id_grupo_recurrencia")
+})
 @Getter
 @Setter
 @Audited

@@ -110,7 +110,7 @@ public class SolicitudAnuncioController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'OFICINA', 'USUARIO_AUTENTICADO_APP', 'COMUNICACIONES')")
     public ResponseEntity<ApiResponse<SolicitudAnuncioResponse>> actualizar(
             @PathVariable Long id,
-            @RequestBody SolicitudAnuncioRequest request,
+            @Valid @RequestBody SolicitudAnuncioRequest request,
             Authentication authentication) {
         return ResponseEntity.ok(ApiResponse.success(solicitudAnuncioService.actualizar(id, request, authentication), "Solicitud actualizada"));
     }
@@ -134,7 +134,7 @@ public class SolicitudAnuncioController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMUNICACIONES', 'ADMIN')")
     public ResponseEntity<ApiResponse<PublicacionAnuncioResponse>> updatePublicacion(
             @PathVariable Long id,
-            @RequestBody UpdatePublicacionRequest request) {
+            @Valid @RequestBody UpdatePublicacionRequest request) {
         return ResponseEntity.ok(ApiResponse.success(solicitudAnuncioService.updatePublicacion(id, request), "Publicación actualizada correctamente"));
     }
 }

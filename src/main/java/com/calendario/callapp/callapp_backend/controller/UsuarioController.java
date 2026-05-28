@@ -23,7 +23,8 @@ public class UsuarioController {
     @PostMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
     public ResponseEntity<ApiResponse<UsuarioResponse>> crearUsuario(@Valid @RequestBody UsuarioRequest request) {
-        return ResponseEntity.ok(ApiResponse.success(usuarioService.crearUsuario(request), "Usuario creado exitosamente"));
+        return ResponseEntity.status(org.springframework.http.HttpStatus.CREATED)
+                .body(ApiResponse.success(usuarioService.crearUsuario(request), "Usuario creado exitosamente"));
     }
 
     @GetMapping("/{id}")

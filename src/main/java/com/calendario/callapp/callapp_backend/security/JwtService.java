@@ -4,6 +4,9 @@ import com.calendario.callapp.callapp_backend.entity.Usuario;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.security.Key;
@@ -11,13 +14,33 @@ import java.util.Date;
 import java.util.function.Function;
 
 @Service
+@Slf4j
 public class JwtService {
 
-    @org.springframework.beans.factory.annotation.Value("${jwt.secret}")
+    @Value("${jwt.secret}")
     private String secretKey;
 
-    @org.springframework.beans.factory.annotation.Value("${jwt.expiration}")
+    @Value("${jwt.expiration}")
     private long tokenExpiration;
+
+    @PostConstruct
+    public void validarConfiguracion() {
+        if (secretKey == null || secretKey.isBlank()) {
+            throw new IllegalStateException("jwt.secret no puede estar vacío. Configura la variable JWT_SECRET.");
+        }
+        if (secretKey.length() < 32) {
+            throw new IllegalStateException("jwt.secret debe tener al menos 32 caracteres por seguridad.");
+        }
+        if (secretKey.startsWith("dev_only_") && !isDevEnvironment()) {
+            log.warn("ADVERTENCIA DE SEGURIDAD: Se está usando el JWT secret de desarrollo. Define JWT_SECRET en producción.");
+        }
+        log.info("Configuración JWT validada correctamente.");
+    }
+
+    private boolean isDevEnvironment() {
+        String profile = System.getProperty("spring.profiles.active", "");
+        return profile.contains("dev") || profile.isEmpty();
+    }
 
     public String generarToken(Usuario usuario) {
         return Jwts.builder()

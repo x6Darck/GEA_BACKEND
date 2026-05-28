@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
@@ -27,6 +28,7 @@ public class DashboardServiceImpl {
     private final OficinaRepository oficinaRepository;
     private final SolicitudEventoServiceImpl solicitudEventoService;
 
+    @Transactional(readOnly = true)
     public DashboardResumenResponse resumen(Authentication authentication) {
         Usuario usuario = usuarioRepository.getByCorreoOptimized(authentication.getName())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Usuario autenticado no encontrado"));

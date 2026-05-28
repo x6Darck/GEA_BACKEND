@@ -22,6 +22,7 @@ public interface PublicacionAnuncioMapper {
     @Mapping(target = "horaInicio", source = "solicitudAnuncio.horaInicio")
     @Mapping(target = "horaFin", source = "solicitudAnuncio.horaFin")
     @Mapping(target = "oficinaNombre", expression = "java(entity.getSolicitudAnuncio().getOficina() != null ? entity.getSolicitudAnuncio().getOficina().getNombre() : (entity.getSolicitudAnuncio().getUsuarioSolicitante().getOficina() != null ? entity.getSolicitudAnuncio().getUsuarioSolicitante().getOficina().getNombre() : \"N/A\"))")
+    @Mapping(target = "requierePiezaGrafica", source = "solicitudAnuncio.requierePiezaGrafica")
     PublicacionAnuncioResponse toResponse(PublicacionAnuncio entity);
 
     List<PublicacionAnuncioResponse> toResponseList(List<PublicacionAnuncio> entities);

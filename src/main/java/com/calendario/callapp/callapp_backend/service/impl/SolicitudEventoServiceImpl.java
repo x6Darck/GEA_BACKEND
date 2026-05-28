@@ -22,6 +22,7 @@ import com.calendario.callapp.callapp_backend.repository.SolicitudEventoReposito
 import com.calendario.callapp.callapp_backend.repository.TipoEventoCatalogoRepository;
 import com.calendario.callapp.callapp_backend.repository.UsuarioRepository;
 import com.calendario.callapp.callapp_backend.repository.SolicitudEventoParticipanteRepository;
+import com.calendario.callapp.callapp_backend.repository.DispositivoUsuarioRepository;
 import com.calendario.callapp.callapp_backend.mapper.PublicacionEventoMapper;
 import com.calendario.callapp.callapp_backend.mapper.SolicitudEventoMapper;
 import lombok.RequiredArgsConstructor;
@@ -55,6 +56,9 @@ public class SolicitudEventoServiceImpl {
     private final NotificacionServiceImpl notificacionService;
     private final SolicitudEventoMapper solicitudEventoMapper;
     private final PublicacionEventoMapper publicacionEventoMapper;
+    private final PushNotificationService pushNotificationService;
+    private final DispositivoUsuarioRepository dispositivoUsuarioRepository;
+
 
     @Transactional
     @SuppressWarnings("null")
@@ -452,6 +456,7 @@ public class SolicitudEventoServiceImpl {
             // Retornar la publicación de la principal
             PublicacionEvento pubPrincipal = publicacionEventoRepository.findBySolicitudEventoId(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error al recuperar publicación maestra"));
+            triggerImportantEventPush(pubPrincipal);
             return publicacionEventoMapper.toResponse(pubPrincipal);
         }
 
@@ -491,6 +496,8 @@ public class SolicitudEventoServiceImpl {
             guardada.getPiezaGraficaUrl(),
             solicitud.getUsuarioSolicitante() != null ? solicitud.getUsuarioSolicitante().getCorreo() : null
         );
+
+        triggerImportantEventPush(guardada);
         return publicacionEventoMapper.toResponse(guardada);
     }
 
@@ -1050,6 +1057,38 @@ public class SolicitudEventoServiceImpl {
         
         responses.forEach(r -> r.setVisible(visibilityMap.getOrDefault(r.getId(), false)));
         return responses;
+    }
+
+    private void triggerImportantEventPush(PublicacionEvento publicacion) {
+        if (publicacion == null) return;
+        SolicitudEvento solicitud = publicacion.getSolicitudEvento();
+        if (solicitud != null && Boolean.TRUE.equals(solicitud.getEsImportante())) {
+            try {
+                List<String> tokens = dispositivoUsuarioRepository.findAll().stream()
+                        .map(com.calendario.callapp.callapp_backend.entity.DispositivoUsuario::getToken)
+                        .filter(Objects::nonNull)
+                        .distinct()
+                        .toList();
+
+                if (!tokens.isEmpty()) {
+                    String title = "🚨 ¡Evento Importante! " + publicacion.getTituloVisible();
+                    String body = "Se ha publicado un nuevo evento importante en CallApp: " + solicitud.getNombreEvento();
+                    
+                    java.util.Map<String, String> data = java.util.Map.of(
+                            "type", "IMPORTANT_EVENT",
+                            "eventId", String.valueOf(publicacion.getId()),
+                            "title", publicacion.getTituloVisible(),
+                            "click_action", "FLUTTER_NOTIFICATION_CLICK"
+                    );
+
+                    pushNotificationService.sendMulticastNotification(tokens, title, body, data);
+                }
+            } catch (Exception e) {
+                org.slf4j.LoggerFactory.getLogger(SolicitudEventoServiceImpl.class)
+                        .error("Error al enviar notificación push multicast para evento importante {}: {}", 
+                               solicitud.getId(), e.getMessage());
+            }
+        }
     }
 }
 

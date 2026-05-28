@@ -19,12 +19,15 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 @RestController
 @RequestMapping("/reportes")
 @RequiredArgsConstructor
 public class ReporteController {
+
+    private static final int MAX_RANGO_DIAS_EXPORT = 366;
 
     private final ReporteServiceImpl reporteService;
 
@@ -76,6 +79,7 @@ public class ReporteController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate hasta,
             Authentication authentication) {
 
+        validarRangoFechas(desde, hasta);
         byte[] data = reporteService.exportarCsv(desde, hasta, authentication);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename("reporte-solicitudes.csv").build().toString())
@@ -90,6 +94,7 @@ public class ReporteController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate hasta,
             Authentication authentication) {
 
+        validarRangoFechas(desde, hasta);
         byte[] data = reporteService.exportarPdf(desde, hasta, authentication);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename("reporte-solicitudes.pdf").build().toString())
@@ -117,6 +122,23 @@ public class ReporteController {
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename("reporte-" + id + "." + extension).build().toString())
                 .header(HttpHeaders.CONTENT_TYPE, contentType)
                 .body(data);
+    }
+
+    private void validarRangoFechas(LocalDate desde, LocalDate hasta) {
+        if (desde == null || hasta == null) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST, "Las fechas 'desde' y 'hasta' son obligatorias");
+        }
+        if (hasta.isBefore(desde)) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST, "La fecha 'hasta' no puede ser anterior a 'desde'");
+        }
+        long dias = ChronoUnit.DAYS.between(desde, hasta);
+        if (dias > MAX_RANGO_DIAS_EXPORT) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "El rango de fechas no puede superar " + MAX_RANGO_DIAS_EXPORT + " días para exportaciones");
+        }
     }
 
     @PreAuthorize("hasAnyRole('COMUNICACIONES', 'SUPER_ADMIN', 'ADMIN', 'OFICINA', 'USUARIO_AUTENTICADO_APP')")

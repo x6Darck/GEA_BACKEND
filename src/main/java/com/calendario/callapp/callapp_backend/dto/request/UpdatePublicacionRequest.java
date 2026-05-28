@@ -1,5 +1,6 @@
 package com.calendario.callapp.callapp_backend.dto.request;
 
+import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -10,6 +11,8 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @NoArgsConstructor
 public class UpdatePublicacionRequest {
+
+    @Size(max = 200, message = "El título no puede superar 200 caracteres")
     private String tituloVisible;
     private String descripcionVisible;
     private String piezaGraficaUrl;

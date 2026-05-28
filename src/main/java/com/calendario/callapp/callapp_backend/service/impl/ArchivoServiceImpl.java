@@ -5,11 +5,13 @@ import com.calendario.callapp.callapp_backend.entity.ArchivoAdjunto;
 import com.calendario.callapp.callapp_backend.repository.ArchivoAdjuntoRepository;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
@@ -28,6 +30,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ArchivoServiceImpl {
 
     private final ArchivoAdjuntoRepository archivoAdjuntoRepository;
@@ -56,6 +59,7 @@ public class ArchivoServiceImpl {
         }
     }
 
+    @Transactional
     public ArchivoResponse guardar(MultipartFile archivo) {
         if (archivo == null || archivo.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Debes adjuntar un archivo");
@@ -78,25 +82,38 @@ public class ArchivoServiceImpl {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "No fue posible guardar el archivo");
         }
 
-        ArchivoAdjunto metadata = new ArchivoAdjunto();
-        metadata.setNombreOriginal(nombreOriginal);
-        metadata.setNombreAlmacenado(nombreArchivo);
-        metadata.setTokenAcceso(UUID.randomUUID().toString().replace("-", ""));
-        metadata.setContentType(archivo.getContentType());
-        metadata.setTamano(archivo.getSize());
-        metadata.setPublico(true);
-        metadata.setFechaCreacion(java.time.LocalDateTime.now());
-        metadata = archivoAdjuntoRepository.save(metadata);
+        try {
+            ArchivoAdjunto metadata = new ArchivoAdjunto();
+            metadata.setNombreOriginal(nombreOriginal);
+            metadata.setNombreAlmacenado(nombreArchivo);
+            metadata.setTokenAcceso(UUID.randomUUID().toString().replace("-", ""));
+            metadata.setContentType(archivo.getContentType());
+            metadata.setTamano(archivo.getSize());
+            metadata.setPublico(true);
+            metadata.setFechaCreacion(java.time.LocalDateTime.now());
+            metadata = archivoAdjuntoRepository.save(metadata);
 
-        return ArchivoResponse.builder()
-                .id(metadata.getId())
-                .nombreArchivo(nombreArchivo)
-                .nombreOriginal(nombreOriginal)
-                .tokenAcceso(metadata.getTokenAcceso())
-                .url("/archivos/public/" + metadata.getTokenAcceso())
-                .contentType(metadata.getContentType())
-                .tamano(archivo.getSize())
-                .build();
+            log.info("Archivo guardado: {} ({})", nombreOriginal, nombreArchivo);
+
+            return ArchivoResponse.builder()
+                    .id(metadata.getId())
+                    .nombreArchivo(nombreArchivo)
+                    .nombreOriginal(nombreOriginal)
+                    .tokenAcceso(metadata.getTokenAcceso())
+                    .url("/archivos/public/" + metadata.getTokenAcceso())
+                    .contentType(metadata.getContentType())
+                    .tamano(archivo.getSize())
+                    .build();
+        } catch (Exception ex) {
+            // Si falla el guardado en BD, eliminar el archivo del disco para evitar huérfanos
+            try {
+                Files.deleteIfExists(destino);
+                log.warn("Archivo eliminado del disco tras fallo en BD: {}", nombreArchivo);
+            } catch (IOException ioEx) {
+                log.error("No se pudo eliminar el archivo huérfano: {}", nombreArchivo, ioEx);
+            }
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error al registrar el archivo en la base de datos");
+        }
     }
 
     public Resource cargarPublicoComoRecurso(String tokenAcceso) {

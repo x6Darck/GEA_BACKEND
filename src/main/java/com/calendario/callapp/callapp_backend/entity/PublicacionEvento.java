@@ -15,7 +15,10 @@ import org.hibernate.envers.Audited;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "publicaciones_evento")
+@Table(name = "publicaciones_evento", indexes = {
+    @jakarta.persistence.Index(name = "idx_publicacion_evento_visible", columnList = "visible"),
+    @jakarta.persistence.Index(name = "idx_publicacion_evento_solicitud", columnList = "id_solicitud_evento")
+})
 @Data
 @Audited
 public class PublicacionEvento {

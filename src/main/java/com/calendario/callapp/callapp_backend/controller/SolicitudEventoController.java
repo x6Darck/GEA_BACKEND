@@ -160,7 +160,7 @@ public class SolicitudEventoController {
 
     @GetMapping("/app/eventos/proximos")
     public ResponseEntity<ApiResponse<List<PublicacionEventoResponse>>> listarProximos(
-            @RequestParam(defaultValue = "3") int limit,
+            @RequestParam(defaultValue = "3") @jakarta.validation.constraints.Min(1) @jakarta.validation.constraints.Max(50) int limit,
             @RequestParam(required = false) String q) {
         return ResponseEntity.ok(ApiResponse.success(solicitudEventoService.listarProximos(limit, q)));
     }
@@ -184,7 +184,7 @@ public class SolicitudEventoController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMUNICACIONES', 'ADMIN')")
     public ResponseEntity<ApiResponse<PublicacionEventoResponse>> updatePublicacion(
             @PathVariable Long id,
-            @RequestBody UpdatePublicacionRequest request) {
+            @Valid @RequestBody UpdatePublicacionRequest request) {
         return ResponseEntity.ok(ApiResponse.success(solicitudEventoService.updatePublicacion(id, request), "Publicación actualizada correctamente"));
     }
 }

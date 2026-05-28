@@ -29,4 +29,5 @@ public class PublicacionAnuncioResponse {
     private String oficinaNombre;
     private LocalDateTime fechaPublicacion;
     private Boolean visible;
+    private Boolean requierePiezaGrafica;
 }

@@ -19,6 +19,12 @@ public interface UsuarioRepository extends JpaRepository<Usuario, Long> {
 
     boolean existsByMicrosoftOid(String microsoftOid);
 
+    @Query("SELECT u FROM Usuario u WHERE u.telefono = :telefono AND (:excludeId IS NULL OR u.id <> :excludeId)")
+    java.util.Optional<Usuario> findByTelefonoExcluyendo(@Param("telefono") String telefono, @Param("excludeId") Long excludeId);
+
+    @Query("SELECT u FROM Usuario u WHERE u.microsoftOid = :oid AND (:excludeId IS NULL OR u.id <> :excludeId)")
+    java.util.Optional<Usuario> findByMicrosoftOidExcluyendo(@Param("oid") String oid, @Param("excludeId") Long excludeId);
+
     long countByOficinaId(Long oficinaId);
 
     @Query("SELECT u FROM Usuario u " +

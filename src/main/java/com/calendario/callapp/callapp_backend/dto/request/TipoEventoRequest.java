@@ -11,7 +11,8 @@ public class TipoEventoRequest {
 
     private String descripcion;
 
-    @NotBlank
+    @NotBlank(message = "El color es obligatorio")
+    @jakarta.validation.constraints.Pattern(regexp = "^#[0-9A-Fa-f]{6}$", message = "El color debe ser un hexadecimal válido (ej: #CE1126)")
     private String colorHex;
 
     private Boolean activo;

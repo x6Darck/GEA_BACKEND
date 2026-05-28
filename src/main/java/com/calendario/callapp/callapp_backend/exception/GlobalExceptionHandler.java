@@ -1,6 +1,7 @@
 package com.calendario.callapp.callapp_backend.exception;
 
 import com.calendario.callapp.callapp_backend.dto.response.ApiResponse;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -40,6 +41,22 @@ public class GlobalExceptionHandler {
                         .message("Error de validación")
                         .data(errors)
                         .build());
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
+        log.warn("Violación de integridad de datos: {}", ex.getMostSpecificCause().getMessage());
+        String mensaje = "El registro no puede ser guardado porque viola una restricción de unicidad o integridad en la base de datos.";
+        // Intentar dar un mensaje más específico si es constraint de correo o similar
+        String causa = ex.getMostSpecificCause().getMessage();
+        if (causa != null && causa.toLowerCase().contains("correo")) {
+            mensaje = "Ya existe un registro con ese correo electrónico.";
+        } else if (causa != null && causa.toLowerCase().contains("telefono")) {
+            mensaje = "Ya existe un registro con ese número de teléfono.";
+        }
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(ApiResponse.error(mensaje));
     }
 
     @ExceptionHandler(AccessDeniedException.class)

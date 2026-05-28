@@ -11,12 +11,12 @@ import com.calendario.callapp.callapp_backend.repository.UsuarioRepository;
 import com.calendario.callapp.callapp_backend.repository.OficinaRepository;
 import com.calendario.callapp.callapp_backend.repository.RolRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
-
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -27,6 +27,7 @@ import static org.springframework.http.HttpStatus.NOT_FOUND;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class UsuarioServiceImpl {
 
     private final UsuarioRepository usuarioRepository;
@@ -53,7 +54,9 @@ public class UsuarioServiceImpl {
         usuario.setFotoUrl(request.getFotoUrl());
         usuario.setFechaCreacion(LocalDateTime.now());
 
-        return toResponse(usuarioRepository.save(usuario));
+        UsuarioResponse response = toResponse(usuarioRepository.save(usuario));
+        log.info("Usuario creado: {} [{}]", request.getCorreo(), request.getRol());
+        return response;
     }
 
     @Transactional(readOnly = true)
@@ -107,7 +110,9 @@ public class UsuarioServiceImpl {
             usuario.setEstado(request.getEstado());
         }
 
-        return toResponse(usuarioRepository.save(usuario));
+        UsuarioResponse response = toResponse(usuarioRepository.save(usuario));
+        log.info("Usuario actualizado: id={}, correo={}", id, request.getCorreo());
+        return response;
     }
 
     @Transactional
@@ -116,6 +121,7 @@ public class UsuarioServiceImpl {
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Usuario no encontrado"));
         if (usuario != null) {
             usuarioRepository.delete(usuario);
+            log.info("Usuario eliminado: id={}, correo={}", id, usuario.getCorreo());
         }
     }
 
@@ -142,32 +148,20 @@ public class UsuarioServiceImpl {
         if (telefono == null || telefono.trim().isEmpty() || telefono.trim().equalsIgnoreCase("Sin celular"))
             return;
 
-        if (usuarioRepository.existsByTelefono(telefono)) {
-            usuarioRepository.findAll().stream()
-                    .filter(u -> telefono.equals(u.getTelefono()))
-                    .filter(u -> usuarioIdActual == null || !u.getId().equals(usuarioIdActual))
-                    .findFirst()
-                    .ifPresent(u -> {
-                        throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                                "Ya existe un usuario con el teléfono: " + telefono);
-                    });
-        }
+        usuarioRepository.findByTelefonoExcluyendo(telefono, usuarioIdActual).ifPresent(u -> {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Ya existe un usuario con el teléfono: " + telefono);
+        });
     }
 
     private void validarMicrosoftOidDisponible(String oid, Long usuarioIdActual) {
         if (oid == null || oid.isBlank())
             return;
 
-        if (usuarioRepository.existsByMicrosoftOid(oid)) {
-            usuarioRepository.findAll().stream()
-                    .filter(u -> oid.equals(u.getMicrosoftOid()))
-                    .filter(u -> usuarioIdActual == null || !u.getId().equals(usuarioIdActual))
-                    .findFirst()
-                    .ifPresent(u -> {
-                        throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                                "Ya existe un usuario vinculado a esta cuenta de Microsoft (OID: " + oid + ")");
-                    });
-        }
+        usuarioRepository.findByMicrosoftOidExcluyendo(oid, usuarioIdActual).ifPresent(u -> {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Ya existe un usuario vinculado a esta cuenta de Microsoft (OID: " + oid + ")");
+        });
     }
 
     private RolEntity resolveRolEntity(UsuarioRequest request) {

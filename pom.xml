@@ -19,6 +19,7 @@
     <name>callapp_backend</name>
 
     <properties>
+        <!-- Fuerza recarga de configuración del proyecto en VSCode -->
         <java.version>21</java.version>
         <spring-boot.version>3.4.3</spring-boot.version>
     </properties>
@@ -78,6 +79,14 @@
             <groupId>org.hibernate.orm</groupId>
             <artifactId>hibernate-envers</artifactId>
         </dependency>
+
+        <!-- 🔥 Firebase Admin (Notificaciones Push) -->
+        <dependency>
+            <groupId>com.google.firebase</groupId>
+            <artifactId>firebase-admin</artifactId>
+            <version>9.2.0</version>
+        </dependency>
+
 
         <!-- ✅ Validaciones -->
         <dependency>

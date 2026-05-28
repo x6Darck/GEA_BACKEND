@@ -4,6 +4,7 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.util.HtmlUtils;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -19,7 +20,10 @@ public class PlantillaCorreoServiceImpl {
                     StandardCharsets.UTF_8
             );
             for (Map.Entry<String, String> variable : variables.entrySet()) {
-                contenido = contenido.replace("${" + variable.getKey() + "}", variable.getValue() != null ? variable.getValue() : "");
+                String valor = variable.getValue() != null ? variable.getValue() : "";
+                // Escapar HTML para prevenir inyección en el contenido del correo
+                String valorEscapado = HtmlUtils.htmlEscape(valor, StandardCharsets.UTF_8.name());
+                contenido = contenido.replace("${" + variable.getKey() + "}", valorEscapado);
             }
             return contenido;
         } catch (IOException ex) {

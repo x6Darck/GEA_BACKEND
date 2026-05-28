@@ -59,6 +59,16 @@
       "name": "file.max-size-bytes",
       "type": "java.lang.Long",
       "description": "Tamano maximo permitido por archivo en bytes."
+    },
+    {
+      "name": "app.notifications.published-recipients",
+      "type": "java.lang.String",
+      "description": "Lista de destinatarios separados por comas para anuncios publicados."
+    },
+    {
+      "name": "app.frontend-base-url",
+      "type": "java.lang.String",
+      "description": "URL base del frontend web."
     }
   ]
 }
