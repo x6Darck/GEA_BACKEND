@@ -64,26 +64,27 @@ public class ReporteController {
             @RequestParam(required = false) Long idOficina,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate desde,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate hasta,
+            @RequestParam(required = false, defaultValue = "GLOBAL") String tipo,
             Authentication authentication) {
-        
+
         LocalDate d = desde != null ? desde : LocalDate.of(LocalDate.now().getYear(), 1, 1);
         LocalDate h = hasta != null ? hasta : LocalDate.now();
-        
-        return ResponseEntity.ok(ApiResponse.success(reporteService.obtenerDashboardStats(idOficina, d, h, authentication)));
+
+        return ResponseEntity.ok(ApiResponse.success(reporteService.obtenerDashboardStats(idOficina, d, h, tipo, authentication)));
     }
 
     @PreAuthorize("hasAnyRole('COMUNICACIONES', 'SUPER_ADMIN', 'ADMIN')")
-    @GetMapping("/solicitudes/export/csv")
-    public ResponseEntity<byte[]> exportarCsv(
+    @GetMapping("/solicitudes/export/xlsx")
+    public ResponseEntity<byte[]> exportarXlsx(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate desde,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate hasta,
             Authentication authentication) {
 
         validarRangoFechas(desde, hasta);
-        byte[] data = reporteService.exportarCsv(desde, hasta, authentication);
+        byte[] data = reporteService.exportarXlsx(desde, hasta, authentication);
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename("reporte-solicitudes.csv").build().toString())
-                .header(HttpHeaders.CONTENT_TYPE, "text/csv")
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename("reporte-solicitudes.xlsx").build().toString())
+                .header(HttpHeaders.CONTENT_TYPE, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                 .body(data);
     }
 
@@ -115,8 +116,9 @@ public class ReporteController {
                         org.springframework.http.HttpStatus.NOT_FOUND, "El reporte solicitado no existe o no tiene permisos para acceder a él"));
 
         byte[] data = reporteService.exportarReporteGenerado(id, authentication);
-        String contentType = "PDF".equalsIgnoreCase(reporte.getFormato()) ? "application/pdf" : "text/csv";
-        String extension = "PDF".equalsIgnoreCase(reporte.getFormato()) ? "pdf" : "csv";
+        String contentType = "PDF".equalsIgnoreCase(reporte.getFormato()) ? "application/pdf"
+                : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        String extension = "PDF".equalsIgnoreCase(reporte.getFormato()) ? "pdf" : "xlsx";
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename("reporte-" + id + "." + extension).build().toString())
