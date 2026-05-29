@@ -7,11 +7,14 @@ import com.calendario.callapp.callapp_backend.dto.request.UpdatePublicacionReque
 import com.calendario.callapp.callapp_backend.dto.response.PublicacionEventoResponse;
 import com.calendario.callapp.callapp_backend.dto.response.SolicitudEventoResponse;
 import com.calendario.callapp.callapp_backend.entity.EstadoSolicitud;
+import com.calendario.callapp.callapp_backend.service.impl.AgendaPdfService;
 import com.calendario.callapp.callapp_backend.service.impl.SolicitudEventoServiceImpl;
 import com.calendario.callapp.callapp_backend.util.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -26,6 +29,7 @@ import java.util.List;
 public class SolicitudEventoController {
 
     private final SolicitudEventoServiceImpl solicitudEventoService;
+    private final AgendaPdfService agendaPdfService;
 
     @PostMapping("/oficina/solicitudes-evento")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'OFICINA', 'USUARIO_AUTENTICADO_APP', 'COMUNICACIONES')")
@@ -186,5 +190,18 @@ public class SolicitudEventoController {
             @PathVariable Long id,
             @Valid @RequestBody UpdatePublicacionRequest request) {
         return ResponseEntity.ok(ApiResponse.success(solicitudEventoService.updatePublicacion(id, request), "Publicación actualizada correctamente"));
+    }
+
+    @GetMapping("/app/eventos/agenda/export/pdf")
+    public ResponseEntity<byte[]> exportarAgendaPdf(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate desde,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate hasta) {
+        byte[] data = agendaPdfService.exportarAgendaPdf(desde, hasta);
+        String filename = "agenda-gea-" + desde + "-al-" + hasta + ".pdf";
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment().filename(filename).build().toString())
+                .header(HttpHeaders.CONTENT_TYPE, "application/pdf")
+                .body(data);
     }
 }

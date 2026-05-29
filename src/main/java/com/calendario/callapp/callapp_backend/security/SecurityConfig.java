@@ -51,7 +51,7 @@ public class SecurityConfig {
             )
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/auth/**", "/api/auth/**").permitAll()
-                .requestMatchers(HttpMethod.GET, "/app/eventos/publicados/**", "/app/anuncios/publicados/**", "/archivos/public/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/app/eventos/publicados/**", "/app/anuncios/publicados/**", "/archivos/public/**", "/app/eventos/agenda/export/pdf").permitAll()
                 .requestMatchers("/lugares-fisicos/**").authenticated()
                 .requestMatchers("/admin/**").hasAnyRole("SUPER_ADMIN", "ADMIN")
                 .requestMatchers("/comunicaciones/archivos/upload").hasAnyRole("SUPER_ADMIN", "ADMIN", "COMUNICACIONES", "OFICINA", "USUARIO_AUTENTICADO_APP")
