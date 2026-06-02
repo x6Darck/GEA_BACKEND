@@ -2,6 +2,7 @@ package com.calendario.callapp.callapp_backend.repository;
 
 import com.calendario.callapp.callapp_backend.entity.EstadoSolicitud;
 import com.calendario.callapp.callapp_backend.entity.SolicitudEvento;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -18,7 +19,7 @@ public interface SolicitudEventoRepository extends JpaRepository<SolicitudEvento
     List<SolicitudEvento> getAllByOficinaIdOptimized(@Param("oficinaId") Long oficinaId);
 
     @Query("SELECT s FROM SolicitudEvento s LEFT JOIN FETCH s.oficina LEFT JOIN FETCH s.tipoEventoCatalogo LEFT JOIN FETCH s.usuarioSolicitante u ORDER BY s.fechaCreacion DESC")
-    List<SolicitudEvento> getAllUniqueWithAssociations();
+    List<SolicitudEvento> getAllUniqueWithAssociations(Pageable pageable);
 
     long countByEstado(EstadoSolicitud estado);
 

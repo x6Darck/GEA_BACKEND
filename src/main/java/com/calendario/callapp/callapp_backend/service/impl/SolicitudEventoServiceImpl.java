@@ -357,7 +357,7 @@ public class SolicitudEventoServiceImpl {
     @Transactional(readOnly = true)
     public List<SolicitudEventoResponse> listarParaRevision(String q, EstadoSolicitud estado, Integer mes, Integer anio) {
         return enrichResponseList(solicitudEventoMapper.toResponseList(
-            solicitudEventoRepository.getAllUniqueWithAssociations().stream()
+            solicitudEventoRepository.getAllUniqueWithAssociations(PageRequest.of(0, 200)).stream()
                 .filter(solicitud -> coincideFiltroSolicitud(solicitud, q, estado, mes, anio))
                 .toList()
         ));
@@ -610,7 +610,7 @@ public class SolicitudEventoServiceImpl {
             Integer anio) {
         List<PublicacionEvento> publicaciones;
         if (filtro == null || filtro.isBlank()) {
-            publicaciones = publicacionEventoRepository.getAllVisibleOptimized();
+            publicaciones = publicacionEventoRepository.getAllVisibleOptimized(PageRequest.of(0, 300));
         } else {
             LocalDate fechaBase = fecha != null ? fecha : LocalDate.now();
             LocalDate inicio = calcularInicio(filtro, fechaBase);
@@ -632,7 +632,7 @@ public class SolicitudEventoServiceImpl {
 
         // Si hay búsqueda 'q', aún dependemos de filtrado en memoria por ahora o expandir Repo
         if (q != null && !q.isBlank()) {
-            return publicacionEventoRepository.getAllVisibleOptimized().stream()
+            return publicacionEventoRepository.getAllVisibleOptimized(PageRequest.of(0, 300)).stream()
                     .filter(publicacion -> !publicacion.getSolicitudEvento().getFechaEvento().isBefore(hoy))
                     .filter(publicacion -> coincideFiltroPublicacion(publicacion, q, null, null, null))
                     .sorted((a, b) -> {

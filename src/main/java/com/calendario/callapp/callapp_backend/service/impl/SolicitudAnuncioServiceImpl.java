@@ -17,6 +17,7 @@ import com.calendario.callapp.callapp_backend.repository.PublicacionAnuncioRepos
 import com.calendario.callapp.callapp_backend.repository.SolicitudAnuncioRepository;
 import com.calendario.callapp.callapp_backend.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
@@ -138,7 +139,7 @@ public class SolicitudAnuncioServiceImpl {
             );
         }
 
-        return enrichResponseList(solicitudAnuncioRepository.getAllUniqueWithAssociations().stream()
+        return enrichResponseList(solicitudAnuncioRepository.getAllUniqueWithAssociations(PageRequest.of(0, 200)).stream()
                 .filter(solicitud -> solicitud.getUsuarioSolicitante() != null && solicitud.getUsuarioSolicitante().getId().equals(usuario.getId()))
                 .filter(solicitud -> coincideFiltroSolicitud(solicitud, q, estado, mes, anio))
                 .map(solicitudAnuncioMapper::toResponse)
@@ -149,7 +150,7 @@ public class SolicitudAnuncioServiceImpl {
     @Transactional(readOnly = true)
     public List<SolicitudAnuncioResponse> listarParaRevision(String q, EstadoSolicitud estado, Integer mes, Integer anio) {
         return enrichResponseList(solicitudAnuncioMapper.toResponseList(
-            solicitudAnuncioRepository.getAllUniqueWithAssociations().stream()
+            solicitudAnuncioRepository.getAllUniqueWithAssociations(PageRequest.of(0, 200)).stream()
                 .filter(solicitud -> coincideFiltroSolicitud(solicitud, q, estado, mes, anio))
                 .toList()
         ));

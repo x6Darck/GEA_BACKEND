@@ -42,7 +42,7 @@ public interface PublicacionEventoRepository extends JpaRepository<PublicacionEv
     List<PublicacionEvento> findPublicadasEnRango(@Param("inicio") LocalDate inicio, @Param("fin") LocalDate fin);
 
     @Query("SELECT p FROM PublicacionEvento p JOIN FETCH p.solicitudEvento s JOIN FETCH s.oficina JOIN FETCH s.tipoEventoCatalogo WHERE p.visible = true ORDER BY s.esImportante DESC, p.fechaPublicacion DESC")
-    List<PublicacionEvento> getAllVisibleOptimized();
+    List<PublicacionEvento> getAllVisibleOptimized(Pageable pageable);
 
     @Query("SELECT p FROM PublicacionEvento p JOIN FETCH p.solicitudEvento s JOIN FETCH s.oficina JOIN FETCH s.tipoEventoCatalogo WHERE p.id = :id AND p.visible = true")
     Optional<PublicacionEvento> getByIdAndVisibleUnique(@Param("id") Long id);

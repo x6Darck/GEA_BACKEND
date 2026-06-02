@@ -2,6 +2,7 @@ package com.calendario.callapp.callapp_backend.repository;
 
 import com.calendario.callapp.callapp_backend.entity.EstadoSolicitud;
 import com.calendario.callapp.callapp_backend.entity.SolicitudAnuncio;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -19,7 +20,7 @@ public interface SolicitudAnuncioRepository extends JpaRepository<SolicitudAnunc
     List<SolicitudAnuncio> getAllByOficinaIdOptimized(@Param("oficinaId") Long oficinaId);
 
     @Query("SELECT DISTINCT s FROM SolicitudAnuncio s LEFT JOIN FETCH s.usuarioSolicitante u LEFT JOIN FETCH u.oficina LEFT JOIN FETCH s.lugaresFisicos ORDER BY s.fechaCreacion DESC")
-    List<SolicitudAnuncio> getAllUniqueWithAssociations();
+    List<SolicitudAnuncio> getAllUniqueWithAssociations(Pageable pageable);
 
     long countByEstado(EstadoSolicitud estado);
     long countByOficinaId(Long oficinaId);
