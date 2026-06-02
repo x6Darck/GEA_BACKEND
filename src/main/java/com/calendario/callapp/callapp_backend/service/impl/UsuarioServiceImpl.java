@@ -10,8 +10,11 @@ import com.calendario.callapp.callapp_backend.entity.Usuario;
 import com.calendario.callapp.callapp_backend.repository.UsuarioRepository;
 import com.calendario.callapp.callapp_backend.repository.OficinaRepository;
 import com.calendario.callapp.callapp_backend.repository.RolRepository;
+import com.calendario.callapp.callapp_backend.security.CustomUserDetailsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -34,6 +37,10 @@ public class UsuarioServiceImpl {
     private final OficinaRepository oficinaRepository;
     private final RolRepository rolRepository;
     private final BCryptPasswordEncoder passwordEncoder;
+
+    @Autowired
+    @Lazy
+    private CustomUserDetailsService customUserDetailsService;
 
     @Transactional
     public UsuarioResponse crearUsuario(UsuarioRequest request) {
@@ -111,6 +118,7 @@ public class UsuarioServiceImpl {
         }
 
         UsuarioResponse response = toResponse(usuarioRepository.save(usuario));
+        customUserDetailsService.invalidarCacheUsuario(usuario.getCorreo());
         log.info("Usuario actualizado: id={}, correo={}", id, request.getCorreo());
         return response;
     }
