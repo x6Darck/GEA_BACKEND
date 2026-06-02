@@ -26,20 +26,26 @@ public class JwtService {
     @PostConstruct
     public void validarConfiguracion() {
         if (secretKey == null || secretKey.isBlank()) {
-            throw new IllegalStateException("jwt.secret no puede estar vacío. Configura la variable JWT_SECRET.");
+            throw new IllegalStateException(
+                "FATAL: jwt.secret no está configurado. Define la variable de entorno JWT_SECRET.");
         }
         if (secretKey.length() < 32) {
-            throw new IllegalStateException("jwt.secret debe tener al menos 32 caracteres por seguridad.");
+            throw new IllegalStateException(
+                "FATAL: jwt.secret debe tener al menos 32 caracteres. Longitud actual: " + secretKey.length());
         }
-        if (secretKey.startsWith("dev_only_") && !isDevEnvironment()) {
-            log.warn("ADVERTENCIA DE SEGURIDAD: Se está usando el JWT secret de desarrollo. Define JWT_SECRET en producción.");
+        if (secretKey.startsWith("dev_only_") && isProductionEnvironment()) {
+            throw new IllegalStateException(
+                "FATAL: Estás usando el JWT secret de desarrollo en un entorno de producción. " +
+                "Define JWT_SECRET con un valor seguro antes de arrancar.");
         }
-        log.info("Configuración JWT validada correctamente.");
+        log.info("Configuración JWT validada. Secret length: {} chars.", secretKey.length());
     }
 
-    private boolean isDevEnvironment() {
+    private boolean isProductionEnvironment() {
         String profile = System.getProperty("spring.profiles.active", "");
-        return profile.contains("dev") || profile.isEmpty();
+        // Si el perfil incluye 'prod', es producción
+        // Si está vacío o incluye 'dev', es desarrollo
+        return profile.contains("prod") || (!profile.isEmpty() && !profile.contains("dev"));
     }
 
     public String generarToken(Usuario usuario) {
