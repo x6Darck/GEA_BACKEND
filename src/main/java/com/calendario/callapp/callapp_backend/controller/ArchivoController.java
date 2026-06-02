@@ -1,7 +1,7 @@
 package com.calendario.callapp.callapp_backend.controller;
 
 import com.calendario.callapp.callapp_backend.dto.response.ArchivoResponse;
-import com.calendario.callapp.callapp_backend.service.impl.ArchivoServiceImpl;
+import com.calendario.callapp.callapp_backend.service.ArchivoStorageService;
 import com.calendario.callapp.callapp_backend.util.ApiResponse;
 import lombok.RequiredArgsConstructor;
 
@@ -16,7 +16,7 @@ import org.springframework.web.multipart.MultipartFile;
 @RequestMapping
 public class ArchivoController {
 
-    private final ArchivoServiceImpl archivoService;
+    private final ArchivoStorageService archivoService;
 
     @PostMapping("/comunicaciones/archivos/upload")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMUNICACIONES', 'ADMIN', 'OFICINA', 'USUARIO_AUTENTICADO_APP')")
