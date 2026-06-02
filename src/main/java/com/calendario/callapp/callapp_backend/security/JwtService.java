@@ -23,6 +23,9 @@ public class JwtService {
     @Value("${jwt.expiration}")
     private long tokenExpiration;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.springframework.core.env.Environment springEnvironment;
+
     @PostConstruct
     public void validarConfiguracion() {
         if (secretKey == null || secretKey.isBlank()) {
@@ -42,10 +45,15 @@ public class JwtService {
     }
 
     private boolean isProductionEnvironment() {
-        String profile = System.getProperty("spring.profiles.active", "");
-        // Si el perfil incluye 'prod', es producción
-        // Si está vacío o incluye 'dev', es desarrollo
-        return profile.contains("prod") || (!profile.isEmpty() && !profile.contains("dev"));
+        String[] profiles = springEnvironment.getActiveProfiles();
+        if (profiles.length == 0) return false;
+        for (String p : profiles) {
+            if (p.contains("prod")) return true;
+        }
+        for (String p : profiles) {
+            if (p.contains("dev")) return false;
+        }
+        return true;
     }
 
     public String generarToken(Usuario usuario) {
