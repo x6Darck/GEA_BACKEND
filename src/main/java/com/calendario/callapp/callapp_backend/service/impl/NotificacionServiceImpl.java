@@ -231,6 +231,7 @@ public class NotificacionServiceImpl {
                 null);
     }
 
+    @Async("notificacionesExecutor")
     public void enviarCorreoPruebaEvento(String destinatario, String titulo, String lugar, String oficina) {
         String tituloSeguro = safe(titulo).isBlank() ? "Evento de prueba CallApp" : safe(titulo);
         String lugarSeguro = safe(lugar).isBlank() ? "Auditorio principal" : safe(lugar);
