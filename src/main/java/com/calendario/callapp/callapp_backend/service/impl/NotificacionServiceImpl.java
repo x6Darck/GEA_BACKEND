@@ -49,7 +49,7 @@ public class NotificacionServiceImpl {
     @Value("${app.frontend-base-url:http://localhost:5173}")
     private String frontendBaseUrl = "http://localhost:5173";
 
-    @Async
+    @Async("notificacionesExecutor")
     public void notificarCreacionEvento(Long id, String titulo, String nombreSolicitante, String nombreOficina) {
         log.info("Notificando NUEVA SOLICITUD de evento: id={}, titulo={}", id, titulo);
         
@@ -70,7 +70,7 @@ public class NotificacionServiceImpl {
                 null);
     }
 
-    @Async
+    @Async("notificacionesExecutor")
     public void notificarCreacionAnuncio(Long id, String titulo, String nombreSolicitante, String nombreOficina) {
         log.info("Notificando NUEVA SOLICITUD de anuncio: id={}, titulo={}", id, titulo);
         
@@ -91,7 +91,7 @@ public class NotificacionServiceImpl {
                 null);
     }
 
-    @Async
+    @Async("notificacionesExecutor")
     public void notificarPublicacionEvento(Long publicacionId, String titulo, String descripcion, String fechaEvento, String horaInicio, String horaFin, String lugar, String tipoEvento, String responsable, String oficina, String piezaGraficaUrl, String correoSolicitante) {
         log.info("Iniciando proceso de notificacion para EVENTO publicado: id={}, titulo={}", publicacionId, titulo);
 
@@ -128,7 +128,7 @@ public class NotificacionServiceImpl {
                 piezaGraficaUrl);
     }
 
-    @Async
+    @Async("notificacionesExecutor")
     public void notificarPublicacionAnuncio(Long publicacionId, String titulo, String descripcion, String categoria, String vigencia, String lugar, String responsable, String piezaGraficaUrl, String correoSolicitante, String correoContacto) {
         log.info("Iniciando proceso de notificacion para ANUNCIO publicado: id={}, titulo={}", publicacionId, titulo);
 
@@ -165,7 +165,7 @@ public class NotificacionServiceImpl {
                 piezaGraficaUrl);
     }
 
-    @Async
+    @Async("notificacionesExecutor")
     public void notificarRechazoEvento(String nombreEvento, String motivoRechazo, String correoSolicitante) {
         log.info("Notificando RECHAZO de evento: titulo={}", nombreEvento);
         
@@ -182,7 +182,7 @@ public class NotificacionServiceImpl {
                 null);
     }
 
-    @Async
+    @Async("notificacionesExecutor")
     public void notificarAprobacionEvento(String nombreEvento, String correoSolicitante) {
         log.info("Notificando APROBACION de evento: titulo={}", nombreEvento);
         
@@ -198,7 +198,7 @@ public class NotificacionServiceImpl {
                 null);
     }
 
-    @Async
+    @Async("notificacionesExecutor")
     public void notificarRechazoAnuncio(String titulo, String motivoRechazo, String correoSolicitante) {
         log.info("Notificando RECHAZO de anuncio: titulo={}", titulo);
         
@@ -215,7 +215,7 @@ public class NotificacionServiceImpl {
                 null);
     }
 
-    @Async
+    @Async("notificacionesExecutor")
     public void notificarAprobacionAnuncio(String titulo, String correoSolicitante) {
         log.info("Notificando APROBACION de anuncio: titulo={}", titulo);
         
