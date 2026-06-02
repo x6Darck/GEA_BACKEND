@@ -3,6 +3,7 @@ package com.calendario.callapp.callapp_backend.service.impl;
 import com.calendario.callapp.callapp_backend.dto.response.ArchivoResponse;
 import com.calendario.callapp.callapp_backend.entity.ArchivoAdjunto;
 import com.calendario.callapp.callapp_backend.repository.ArchivoAdjuntoRepository;
+import com.calendario.callapp.callapp_backend.service.ArchivoStorageService;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,7 +32,7 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 @Slf4j
-public class ArchivoServiceImpl {
+public class ArchivoServiceImpl implements ArchivoStorageService {
 
     private final ArchivoAdjuntoRepository archivoAdjuntoRepository;
 
