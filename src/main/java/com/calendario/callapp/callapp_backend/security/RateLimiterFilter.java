@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -14,6 +15,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
+@Slf4j
 @Component
 public class RateLimiterFilter extends OncePerRequestFilter {
 
@@ -78,7 +80,7 @@ public class RateLimiterFilter extends OncePerRequestFilter {
         int initialSize = requestCounts.size();
         requestCounts.entrySet().removeIf(entry -> entry.getValue().minute < currentTime);
         if (initialSize > 0) {
-            System.out.println("RateLimiter cleanup: Removed entries. Current size: " + requestCounts.size());
+            log.debug("RateLimiter cleanup: tamaño actual del mapa: {}", requestCounts.size());
         }
     }
 

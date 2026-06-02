@@ -1,6 +1,6 @@
 package com.calendario.callapp.callapp_backend.exception;
 
-import com.calendario.callapp.callapp_backend.dto.response.ApiResponse;
+import com.calendario.callapp.callapp_backend.util.ApiResponse;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
