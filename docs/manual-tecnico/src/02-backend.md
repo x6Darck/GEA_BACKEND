@@ -283,3 +283,189 @@ Dos componentes producen respuestas de error de seguridad uniformes en JSON (con
 - **`JwtAccessDeniedHandler`** (`AccessDeniedHandler`): se invoca cuando un usuario **autenticado** intenta acceder a un recurso para el que **no tiene permisos**. Devuelve **HTTP 403 FORBIDDEN** con el mensaje *"No tienes permisos para acceder a este recurso"*.
 
 Ambos se registran en `SecurityConfig` dentro de `exceptionHandling`, garantizando que los errores de autenticación y autorización tengan el mismo formato que el resto de la API.
+
+
+## 2.5 Modelo de datos
+
+El modelo de datos del backend se implementa mediante **JPA / Hibernate** sobre una base de datos **MySQL**. Cada tabla se representa con una clase `@Entity` del paquete `entity/`, cuyos identificadores se generan con estrategia `IDENTITY` (auto-incremento de MySQL). El modelo combina entidades de negocio (usuarios, solicitudes, publicaciones), entidades de catálogo (roles, tipos de evento, lugares físicos) y entidades de soporte operativo (dispositivos, reportes, notificaciones, archivos).
+
+La mayoría de las entidades de negocio heredan de la superclase **`BaseEntity`**, que aporta de forma transparente los campos de **auditoría de creación y modificación** mediante el *listener* de Spring Data JPA. Además, las entidades relevantes para la trazabilidad están anotadas con **`@Audited` (Hibernate Envers)**, lo que genera automáticamente tablas de historial (`_aud`) y registra cada cambio asociado a una revisión. La información de cada revisión (quién y desde qué IP) se almacena en la entidad personalizada `AuditRevisionEntity`.
+
+![Figura: Modelo entidad-relación](../assets/diagrams/backend-er.svg)
+<p class="figure-caption">Figura: Modelo entidad-relación del backend</p>
+
+### 2.5.1 Entidad base y auditoría
+
+**`BaseEntity`** es una superclase abstracta anotada con `@MappedSuperclass` y `@EntityListeners(AuditingEntityListener.class)`. No genera tabla propia: sus columnas se materializan en cada tabla de las entidades que la extienden. Aporta cuatro campos de auditoría que Spring Data rellena automáticamente:
+
+| Campo | Columna | Anotación | Descripción |
+|-------|---------|-----------|-------------|
+| `fechaCreacion` | `fecha_creacion` | `@CreatedDate` | Fecha y hora de creación. `nullable = false`, `updatable = false`. |
+| `fechaActualizacion` | `fecha_actualizacion` | `@LastModifiedDate` | Fecha y hora de la última modificación. |
+| `usuarioCreacion` | `usuario_creacion` | `@CreatedBy` | Usuario que creó el registro. `updatable = false`. |
+| `usuarioActualizacion` | `usuario_actualizacion` | `@LastModifiedBy` | Usuario de la última modificación. |
+
+Extienden `BaseEntity`: `Usuario`, `Oficina`, `DispositivoUsuario`, `SolicitudEvento`, `SolicitudAnuncio` y `LugarFisico`.
+
+**Auditoría histórica con Hibernate Envers.** Las entidades anotadas con **`@Audited`** generan, por cada tabla, una tabla espejo de historial con sufijo **`_aud`** que conserva todas las versiones de cada fila junto al número de revisión. Están auditadas: `Usuario`, `RolEntity`, `Oficina`, `SolicitudEvento`, `SolicitudEventoParticipante`, `PublicacionEvento`, `SolicitudAnuncio`, `PublicacionAnuncio`, `TipoEventoCatalogo` y `LugarFisico`.
+
+La entidad **`AuditRevisionEntity`** (tabla **`audit_revision_info`**) personaliza la entidad de revisión de Envers. Extiende `DefaultRevisionEntity` (que aporta `rev` y `revtstmp` mediante `@AttributeOverrides`) y añade contexto de seguridad mediante el *listener* `AuditRevisionListener`:
+
+| Campo | Columna | Descripción |
+|-------|---------|-------------|
+| `id` (heredado) | `rev` | Identificador de la revisión. |
+| `timestamp` (heredado) | `revtstmp` | Marca temporal de la revisión. |
+| `nombreUsuario` | `nombre_usuario` | Usuario que originó el cambio. |
+| `ipAddress` | `ip_address` | Dirección IP desde la que se realizó el cambio. |
+
+> Se eligió deliberadamente el nombre de tabla `audit_revision_info` (en lugar del `revinfo` por defecto) para evitar conflictos con esquemas antiguos y garantizar portabilidad.
+
+### 2.5.2 Entidades principales
+
+A continuación se documentan las **16 entidades** persistentes (no enumeraciones), agrupadas por dominio funcional.
+
+#### Usuarios y roles
+
+**`Usuario`** — tabla **`usuarios`** (extiende `BaseEntity`, `@Audited`). Representa a las personas que acceden a la plataforma.
+
+| Campo | Columna | Detalle |
+|-------|---------|---------|
+| `id` | `id_usuario` | PK auto-incremental. |
+| `nombre` | `nombre` | No nulo. |
+| `correo` | `correo` | No nulo, **único** (índice `idx_usuario_correo`). |
+| `telefono` | `telefono` | Longitud 30. |
+| `password` | `password` | Hash de contraseña, no nulo. |
+| `rolEntity` | `id_rol` (FK) | `@ManyToOne` → `RolEntity`. |
+| `oficina` | `id_oficina` (FK) | `@ManyToOne` → `Oficina` (opcional). |
+| `estado` | `estado` | Estado textual (p. ej. `ACTIVO`). |
+| `authProvider` | `auth_provider` | Enum `AuthProvider` (`@Enumerated(STRING)`), no nulo. |
+| `microsoftOid` | `microsoft_oid` | OID de Microsoft Entra, único (índice `idx_usuario_microsoft_oid`). |
+| `fotoUrl` | `foto_url` | URL de avatar. |
+
+El método `@Transient getRol()` deriva el enum `Rol` a partir del nombre de `RolEntity`, manteniendo compatibilidad con la capa de seguridad sin duplicar datos.
+
+**`RolEntity`** — tabla **`roles`** (`@Audited`). Catálogo de roles. Campos: `id` (`id_rol`, PK), `nombre` (`nombre`, no nulo, único, longitud 50) y `fechaCreacion`. *Nota:* a diferencia de las demás entidades de negocio, `RolEntity` no extiende `BaseEntity`.
+
+**`Oficina`** — tabla **`oficinas`** (extiende `BaseEntity`, `@Audited`). Unidad organizativa que agrupa usuarios y solicitudes. Campos: `id` (`id_oficina`, PK), `nombre` (no nulo, único, longitud 120), `programaAcademico` (longitud 120), `descripcion` (longitud 500) y `activa` (booleano, no nulo).
+
+**`DispositivoUsuario`** — tabla **`dispositivos_usuario`** (extiende `BaseEntity`). Registra los tokens de notificación push de cada usuario. Campos: `id` (`id_dispositivo`, PK), `token` (no nulo, único, longitud 500, índice `idx_dispositivo_token`), `usuario` (`id_usuario`, FK `@ManyToOne` no nulo → `Usuario`) y `fechaRegistro` (no nulo).
+
+#### Eventos
+
+**`SolicitudEvento`** — tabla **`solicitudes_evento`** (extiende `BaseEntity`, `@Audited`). Entidad central del flujo de eventos; concentra la solicitud y sus metadatos. Índices sobre `estado`, `id_oficina`, `fecha_evento` e `id_grupo_recurrencia`.
+
+| Campo | Columna | Detalle |
+|-------|---------|---------|
+| `id` | `id_solicitud` | PK. |
+| `nombreEvento` | `nombre_evento` | No nulo, longitud 160. |
+| `descripcionEvento` | `descripcion_evento` | Longitud 2000. |
+| `fechaEvento` | `fecha_evento` | `LocalDate`, no nulo. |
+| `horaInicio` / `horaFin` | `hora_inicio` / `hora_fin` | `LocalTime`, no nulos. |
+| `lugaresFisicos` | tabla puente `solicitud_evento_lugares` | `@ManyToMany` → `LugarFisico`. |
+| `linkConexion` | `link_conexion` | URL de transmisión. |
+| `responsableEvento` | `responsable_evento` | Longitud 120. |
+| `tipoEventoCatalogo` | `id_tipo_evento` (FK) | `@ManyToOne` → `TipoEventoCatalogo`. |
+| `estado` | `estado` | Enum `EstadoSolicitud`, no nulo. |
+| `motivoRechazo` | `motivoRechazo` | Longitud 1000. |
+| `fechaRevision` | `fecha_revision` | Momento de aprobación/rechazo. |
+| `oficina` | `id_oficina` (FK) | `@ManyToOne` no nulo → `Oficina`. |
+| `usuarioSolicitante` | `id_usuario_solicitante` (FK) | `@ManyToOne` no nulo → `Usuario`. |
+| `usuarioRevisor` | `id_usuario_revisor` (FK) | `@ManyToOne` opcional → `Usuario`. |
+| `piezaGraficaUrl` | `pieza_grafica_url` | Imagen del evento. |
+| `requiereTransmision`, `requiereCubrimiento`, `esImportante`, `requierePiezaGrafica`, `esPrincipal` | — | Banderas booleanas no nulas. |
+| `observaciones` | `observaciones` | Longitud 2000. |
+| `frecuenciaRecurrencia` | `frecuencia_recurrencia` | Enum `FrecuenciaRecurrencia` (por defecto `NINGUNA`). |
+| `fechaFinRecurrencia` | `fecha_fin_recurrencia` | Fin de la serie recurrente. |
+| `idGrupoRecurrencia` | `id_grupo_recurrencia` | Agrupa instancias de una misma serie. |
+| `participantes` | — | `@OneToMany` → `SolicitudEventoParticipante` (`cascade = ALL`, `orphanRemoval`). |
+
+**`SolicitudEventoParticipante`** — tabla **`solicitud_evento_participantes`** (`@Audited`). Personas vinculadas a un evento. Campos: `id` (`id_participante`, PK), `nombre` (no nulo), `cargo`, `descripcion`, `fotoUrl`, `telefono`, `correo`, `tipo` (enum `TipoParticipante`, no nulo) y `solicitudEvento` (`id_solicitud_evento`, FK `@ManyToOne` no nulo → `SolicitudEvento`).
+
+**`PublicacionEvento`** — tabla **`publicaciones_evento`** (`@Audited`). Versión publicada/visible de una solicitud de evento aprobada. Índices sobre `visible` e `id_solicitud_evento`. Campos: `id` (`id_publicacion_evento`, PK), `solicitudEvento` (`id_solicitud_evento`, FK `@ManyToOne` no nulo → `SolicitudEvento`), `tituloVisible` (no nulo), `descripcionVisible`, `piezaGraficaUrl`, `fechaPublicacion` (no nulo), `visible` (booleano, no nulo) y `usuarioPublicador` (`id_usuario_publicador`, FK `@ManyToOne` no nulo → `Usuario`).
+
+**`TipoEventoCatalogo`** — tabla **`tipos_evento`** (`@Audited`). Catálogo de tipos de evento. Campos: `id` (`id_tipo_evento`, PK), `nombre` (no nulo, único, longitud 80), `descripcion`, `colorHex` (color de visualización, no nulo, longitud 7) y `activo` (booleano, no nulo).
+
+#### Anuncios
+
+**`SolicitudAnuncio`** — tabla **`solicitudes_anuncio`** (extiende `BaseEntity`, `@Audited`). Solicitud para publicar un anuncio durante un rango de fechas.
+
+| Campo | Columna | Detalle |
+|-------|---------|---------|
+| `id` | `id_solicitud_anuncio` | PK. |
+| `titulo` | `titulo` | No nulo, longitud 160. |
+| `descripcion` | `descripcion` | Longitud 2000. |
+| `categoria` | `categoria` | Longitud 100. |
+| `lugaresFisicos` | tabla puente `solicitud_anuncio_lugares` | `@ManyToMany` → `LugarFisico` (cascade PERSIST/MERGE). |
+| `correoContacto` / `responsableAnuncio` | — | Datos de contacto. |
+| `fechaInicioPublicacion` / `fechaFinPublicacion` | — | Rango de vigencia (`LocalDate`). |
+| `horaInicio` / `horaFin` | — | `LocalTime`. |
+| `piezaGraficaUrl` | `pieza_grafica_url` | Imagen del anuncio. |
+| `estado` | `estado` | Enum `EstadoSolicitud`, no nulo. |
+| `motivoRechazo`, `fechaRevision` | — | Datos de revisión. |
+| `usuarioSolicitante` | `id_usuario_solicitante` (FK) | `@ManyToOne` no nulo → `Usuario`. |
+| `oficina` | `id_oficina` (FK) | `@ManyToOne` opcional → `Oficina`. |
+| `usuarioRevisor` | `id_usuario_revisor` (FK) | `@ManyToOne` opcional → `Usuario`. |
+| `requierePiezaGrafica` | `requiere_pieza_grafica` | Booleano no nulo. |
+
+**`PublicacionAnuncio`** — tabla **`publicaciones_anuncio`** (`@Audited`). Versión publicada de un anuncio aprobado. Campos: `id` (`id_publicacion_anuncio`, PK), `solicitudAnuncio` (`id_solicitud_anuncio`, FK `@ManyToOne` no nulo → `SolicitudAnuncio`), `tituloVisible` (no nulo), `descripcionVisible`, `piezaGraficaUrl`, `fechaPublicacion` (no nulo), `visible` (booleano, no nulo) y `usuarioPublicador` (`id_usuario_publicador`, FK `@ManyToOne` no nulo → `Usuario`).
+
+#### Compartido
+
+**`LugarFisico`** — tabla **`lugares_fisicos`** (extiende `BaseEntity`, `@Audited`). Catálogo de espacios físicos reutilizables, referenciados vía `@ManyToMany` tanto por eventos como por anuncios. Campos: `id` (`id_lugar_fisico`, PK), `nombre` (no nulo, único, longitud 120), `descripcion`, `capacidad` (entero) y `activo` (booleano, no nulo, por defecto `true`).
+
+**`ArchivoAdjunto`** — tabla **`archivos_adjuntos`**. Metadatos de archivos subidos (no extiende `BaseEntity` ni está auditada). Campos: `id` (`id_archivo_adjunto`, PK), `nombreOriginal` (no nulo), `nombreAlmacenado` (no nulo, único), `tokenAcceso` (no nulo, único, para acceso por URL), `contentType` (no nulo), `tamano` (bytes, no nulo), `publico` (booleano, no nulo) y `fechaCreacion` (no nulo).
+
+#### Reportes y notificaciones
+
+**`ReporteGenerado`** — tabla **`reportes_generados`**. Registro de reportes producidos. Campos: `id` (`id_reporte_generado`, PK), `nombre` (no nulo, longitud 160), `descripcion`, `formato` (no nulo, longitud 20), `fechaDesde` / `fechaHasta` (rango, no nulos), `alcance` (no nulo, longitud 30), `fechaCreacion` (no nulo), `idOficina` (Long simple, sin FK), `idTipoEvento` (Long simple, sin FK) y `usuarioGenerador` (`id_usuario_generador`, FK `@ManyToOne` no nulo → `Usuario`).
+
+**`NotificacionEnviada`** — tabla **`notificaciones_enviadas`**. Bitácora de notificaciones emitidas. Campos: `id` (`id_notificacion_enviada`, PK), `tipo` (no nulo, longitud 30), `destinatarios` (longitud 1000), `asunto` (no nulo, longitud 200), `fechaEnvio` (no nulo), `exito` (booleano, no nulo) y `detalleError` (longitud 1000, motivo del fallo si `exito = false`).
+
+### 2.5.3 Enumeraciones
+
+El modelo define **5 enumeraciones** que se persisten como cadena (`@Enumerated(EnumType.STRING)`):
+
+**`EstadoSolicitud`** — estado del flujo de aprobación de solicitudes de evento y anuncio.
+
+| Valor | Significado |
+|-------|-------------|
+| `PENDIENTE` | Solicitud creada, a la espera de revisión. |
+| `APROBADA` | Aprobada por un revisor. |
+| `RECHAZADA` | Rechazada (con `motivoRechazo`). |
+| `PUBLICADA` | Aprobada y ya publicada/visible. |
+
+**`Rol`** — roles de seguridad de la aplicación. Incluye lógica de mapeo (`fromNombre`, `getSecurityRole`) y de comprobación (`esAdministradorGlobal`, `esComunicaciones`, `esOficina`).
+
+| Valor | Significado |
+|-------|-------------|
+| `SUPER_ADMIN` | Administrador global con control total. |
+| `COMUNICACIONES` | Equipo de comunicaciones (revisión y publicación). |
+| `OFICINA` | Usuario de oficina que crea solicitudes. |
+| `USUARIO_APP` | Usuario básico de la app móvil. |
+| `USUARIO_AUTENTICADO_APP` | Usuario autenticado de la app con permisos de oficina. |
+| `ADMIN` | Administrador (equivalente de seguridad a `SUPER_ADMIN`). |
+| `USUARIO` | Rol por defecto / genérico. |
+
+**`FrecuenciaRecurrencia`** — periodicidad de los eventos recurrentes.
+
+| Valor | Significado |
+|-------|-------------|
+| `NINGUNA` | Evento único (valor por defecto). |
+| `DIARIA` | Se repite cada día. |
+| `SEMANAL` | Se repite cada semana. |
+| `MENSUAL` | Se repite cada mes. |
+
+**`TipoParticipante`** — rol de un participante dentro de un evento.
+
+| Valor | Significado |
+|-------|-------------|
+| `ORGANIZADOR` | Responsable de organizar el evento. |
+| `INVITADO` | Persona invitada / ponente. |
+| `PATROCINADOR_ALIADO` | Patrocinador o aliado del evento. |
+
+**`AuthProvider`** — proveedor de autenticación del usuario.
+
+| Valor | Significado |
+|-------|-------------|
+| `LOCAL` | Credenciales locales (correo y contraseña). |
+| `MICROSOFT` | Autenticación federada vía Microsoft Entra ID. |
