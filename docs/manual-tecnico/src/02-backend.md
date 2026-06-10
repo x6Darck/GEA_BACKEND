@@ -469,3 +469,195 @@ El modelo define **5 enumeraciones** que se persisten como cadena (`@Enumerated(
 |-------|-------------|
 | `LOCAL` | Credenciales locales (correo y contraseña). |
 | `MICROSOFT` | Autenticación federada vía Microsoft Entra ID. |
+
+## 2.6 Capa de repositorios
+
+El paquete `repository/` contiene **14 interfaces** que extienden `JpaRepository<Entidad, Long>` de Spring Data JPA. Al heredar de `JpaRepository` cada repositorio dispone de inmediato del CRUD estándar (`save`, `saveAll`, `findById`, `findAll`, `delete`, `count`, etc.) y de la posibilidad de declarar *query methods* derivados del nombre del método (p. ej. `findByActivoTrueOrderByNombreAsc`, `existsByCorreo`, `countByOficinaId`), que Spring traduce automáticamente a SQL sin escribir consultas.
+
+Para los casos que requieren control fino sobre el SQL/JPQL generado, los repositorios usan consultas explícitas con **`@Query`**. Dos patrones recorren toda la capa y merecen explicación:
+
+- **`JOIN FETCH` contra el problema N+1.** Las asociaciones JPA son por defecto *lazy*: si se carga una lista de N solicitudes y luego, al serializarlas, se accede a su oficina, su tipo de evento y su solicitante, Hibernate ejecutaría una consulta adicional por cada asociación de cada fila (N+1 consultas). Para evitarlo, las consultas optimizadas (sufijo `Optimized` o nombre `getAllVisibleOptimized`, `getByCorreoOptimized`, etc.) precargan en **una sola sentencia** las asociaciones necesarias mediante `JOIN FETCH` (o `LEFT JOIN FETCH` cuando la relación es opcional). Así, el grafo de objetos llega completo a la capa de servicio y la serialización a DTO no dispara más consultas.
+
+- **Paginación de seguridad (`Pageable` / `PageRequest`).** Varias consultas que podrían devolver tablas enteras aceptan un `Pageable`. En la capa de servicio se les pasa un `PageRequest.of(0, N)` con un tope explícito (p. ej. 200 para listados de revisión, 300 para publicaciones visibles, 50 para "próximos"). Esto acota la cantidad de filas materializadas y protege la memoria frente a tablas que crecen con el uso, aunque la API no exponga aún paginación al cliente.
+
+La siguiente tabla resume los 14 repositorios y sus métodos personalizados más relevantes.
+
+| Repositorio | Entidad | Métodos personalizados destacados |
+|-------------|---------|-----------------------------------|
+| `UsuarioRepository` | `Usuario` | `getByCorreoOptimized` (JOIN FETCH de rol + LEFT JOIN FETCH de oficina; base del login y del `UserDetailsService`); `existsByCorreo/Telefono/MicrosoftOid`; `findByTelefonoExcluyendo` / `findByMicrosoftOidExcluyendo` (validan unicidad excluyendo el propio id en ediciones); `searchUsuarios(q, rolName, estado)` (búsqueda dinámica con filtros opcionales `:param IS NULL OR ...`); `countByOficinaId`. |
+| `SolicitudEventoRepository` | `SolicitudEvento` | `getByIdOptimized` y `getAllByOficinaIdOptimized` / `getAllUniqueWithAssociations` (LEFT JOIN FETCH de oficina, tipo y solicitante); `findConflictsBulk` (detección de choques de lugar/horario); `findAllByIdGrupoRecurrencia` (instancias de una serie); familia de `count...Grouped` y `count...Filtered` para el dashboard y reportes; conjunto de `findBy...FechaCreacionBetween...` para reportes. |
+| `PublicacionEventoRepository` | `PublicacionEvento` | `findProximos(hoy, Pageable)` y `findPublicadasEnRango(inicio, fin)` (JOIN FETCH + orden por importancia/fecha/hora); `getAllVisibleOptimized(Pageable)`; `getByIdAndVisibleUnique`; `findBySolicitudEventoId` / `findBySolicitudEventoIdIn` (carga masiva de visibilidad sin N+1). |
+| `SolicitudAnuncioRepository` | `SolicitudAnuncio` | `getByIdOptimized`, `getAllByOficinaIdOptimized`, `getAllUniqueWithAssociations` (con `DISTINCT` por el `JOIN FETCH` de la colección de lugares); counts agrupados y filtrados análogos a eventos; consultas de reporte por oficina/categoría/estado/mes. |
+| `PublicacionAnuncioRepository` | `PublicacionAnuncio` | `findBySolicitudAnuncioId` / `findBySolicitudAnuncioIdIn`; `findByVisibleTrueOrderByFechaPublicacionDesc`; `findByIdAndVisibleTrue`. |
+| `SolicitudEventoParticipanteRepository` | `SolicitudEventoParticipante` | `findBySolicitudEventoId`; `deleteBySolicitudEventoId` (limpieza previa al repoblar participantes). |
+| `ReporteGeneradoRepository` | `ReporteGenerado` | Sobrescribe `findAll` y `findById` con `@Query` + LEFT JOIN FETCH de usuario generador y su oficina; `findByUsuarioGeneradorIdOrderByFechaCreacionDesc`, `findByUsuarioGeneradorOficinaIdOrderByFechaCreacionDesc`, `findByFechaCreacionBetween`. |
+| `OficinaRepository` | `Oficina` | `findByNombreIgnoreCase` (idempotencia de los *seeders*); `findByActivaTrueOrderByNombreAsc`. |
+| `LugarFisicoRepository` | `LugarFisico` | `findByActivoTrueOrderByNombreAsc`; `findByNombreIgnoreCase`. |
+| `TipoEventoCatalogoRepository` | `TipoEventoCatalogo` | `findByActivoTrueOrderByNombreAsc`; `findByNombreIgnoreCaseAndActivoTrue` (resolución del tipo al crear una solicitud); `findByNombreIgnoreCase`. |
+| `RolRepository` | `RolEntity` | `findByNombre` (resolución de rol en *seeders* y alta de usuarios Microsoft). |
+| `DispositivoUsuarioRepository` | `DispositivoUsuario` | `findByToken`; `findByUsuarioId`; `deleteByToken` (registro/baja de tokens FCM). |
+| `ArchivoAdjuntoRepository` | `ArchivoAdjunto` | `findByTokenAccesoAndPublicoTrue` (descarga pública por token); `findByNombreOriginal`. |
+| `NotificacionEnviadaRepository` | `NotificacionEnviada` | Sólo CRUD heredado; se usa como bitácora de envíos (escritura desde `NotificacionServiceImpl`). |
+
+### 2.6.1 Consultas optimizadas destacadas
+
+Algunas consultas concentran lógica de negocio en el propio JPQL y conviene detallarlas:
+
+- **`UsuarioRepository.getByCorreoOptimized`** — `SELECT u FROM Usuario u JOIN FETCH u.rolEntity LEFT JOIN FETCH u.oficina WHERE u.correo = :correo`. Carga el usuario con su rol (obligatorio) y su oficina (opcional) en una sola consulta. Es la base de **toda** la autenticación: la usan `AuthServiceImpl.login`, `CustomUserDetailsService` (cacheada) y la mayoría de servicios para resolver el usuario autenticado a partir de `authentication.getName()`.
+
+- **`PublicacionEventoRepository.findProximos` / `getAllVisibleOptimized`** — ambas filtran por `p.visible = true`, hacen `JOIN FETCH` de la solicitud, su oficina y su tipo de evento, y ordenan por `s.esImportante DESC, fecha, hora`. `findProximos` añade `s.fechaEvento >= :hoy` para devolver sólo lo venidero; `getAllVisibleOptimized` ordena además por `fechaPublicacion DESC`. La paginación (`Pageable`) limita el resultado (50 próximos, 300 visibles).
+
+- **`SolicitudEventoRepository.findConflictsBulk`** — corazón de la validación de agenda. Recibe una **lista** de fechas, una lista de ids de lugar, una franja horaria y un id a excluir. Devuelve las solicitudes `APROBADA` o `PUBLICADA` que comparten lugar y se **solapan en horario** (`s.horaInicio < :horaFin AND s.horaFin > :horaInicio`), opcionalmente excluyendo una solicitud concreta (`:id IS NULL OR s.id <> :id`). Al aceptar una lista de fechas, permite comprobar de un golpe **toda una serie recurrente** sin caer en N+1. La detección de solapamiento es estándar de intervalos: dos rangos se cruzan si cada uno empieza antes de que el otro termine.
+
+- **Counts agrupados (`countByEstadoGrouped`, `countByEstadoGroupedByOficina`)** — devuelven `List<Object[]>` con `[estado, total]`, que los servicios convierten a `Map<EstadoSolicitud, Long>`. Evitan ejecutar una consulta `count` por cada estado, resolviendo el resumen del dashboard en una sola pasada agregada con `GROUP BY`.
+
+## 2.7 Capa de servicios
+
+El paquete `service/impl/` reúne **17 implementaciones** que contienen la lógica de negocio del backend. El patrón es uniforme: clase anotada con **`@Service`**, inyección de dependencias por constructor mediante **`@RequiredArgsConstructor`** de Lombok (campos `private final`) y gestión transaccional declarativa con **`@Transactional`** (en modo `readOnly = true` para las consultas, lo que permite a Hibernate optimizar y omitir el *dirty checking*). Los métodos de lectura/escritura reciben el `Authentication` de Spring Security cuando necesitan resolver al usuario actual, y señalan los errores de negocio con `ResponseStatusException` y el `HttpStatus` adecuado, que el `GlobalExceptionHandler` normaliza a JSON.
+
+Algunos servicios implementan una **interfaz** del paquete `service/` (`AuthServiceImpl → AuthService`, `ArchivoServiceImpl → ArchivoStorageService`, `LugarFisicoServiceImpl → LugarFisicoService`, `DispositivoUsuarioServiceImpl → DispositivoUsuarioService`); el resto se exponen como clases concretas inyectadas directamente en los controladores.
+
+### 2.7.1 Autenticación
+
+**`AuthServiceImpl`** (implementa `AuthService`). Login local con credenciales. Su único método `login(AuthRequest)` (transacción de solo lectura):
+
+1. Resuelve el usuario con `getByCorreoOptimized`; si no existe responde **401** con el mensaje genérico *"Correo o contraseña incorrectos"* (no revela si el correo existe).
+2. Valida que el estado sea `ACTIVO`; en caso contrario, **401** *"Tu cuenta está inactiva"*.
+3. Compara la contraseña con `passwordEncoder.matches(plano, hashAlmacenado)` (BCrypt); si no coincide, **401** genérico.
+4. Genera el JWT con `jwtService.generarToken(usuario)` y construye un `AuthResponse` (token + nombre, correo, rol, id/nombre de oficina y `fotoUrl`).
+
+Todos los intentos fallidos se registran con `log.warn` para trazabilidad. Dependencias: `UsuarioRepository`, `JwtService`, `PasswordEncoder`.
+
+**`MicrosoftAuthServiceImpl`** — SSO con **Azure AD / Microsoft Entra ID**. Su método `autenticar(MicrosoftAuthRequest)`:
+
+1. Exige que `microsoft.tenant-id` y `microsoft.client-id` estén configurados; si no, responde **501 Not Implemented**.
+2. Valida el `idToken` recibido descargando las claves del *issuer* (`JwtDecoders.fromIssuerLocation("https://login.microsoftonline.com/<tenant>/v2.0")`) y decodificándolo; un token inválido produce **401**.
+3. `validarAudiencia`: comprueba que el claim `aud` contenga el `client-id` propio (impide que un token emitido para otra app se reutilice aquí).
+4. Extrae los claims `preferred_username` (correo), `name` y `oid`. **Aprovisionamiento automático (JIT)**: si el correo no existe, crea un usuario nuevo con estado `ACTIVO`, contraseña aleatoria (`UUID`), `authProvider = MICROSOFT` y rol *"Usuario Autenticado"*; si ya existe, valida que esté `ACTIVO` y actualiza su `microsoftOid` y proveedor.
+5. Devuelve un `AuthResponse` con un JWT propio de GEA generado por `JwtService` (el token de Microsoft sólo sirve para autenticar; a partir de ahí el sistema usa su propio JWT).
+
+Dependencias: `UsuarioRepository`, `RolRepository`, `JwtService`.
+
+### 2.7.2 Gestión de eventos — `SolicitudEventoServiceImpl`
+
+Es el **servicio más complejo del backend**. Orquesta el ciclo de vida completo de un evento, desde la solicitud hasta la publicación, incluyendo eventos recurrentes (series), detección de conflictos de lugares y notificaciones por correo y push. Inyecta 11 dependencias (repositorios de solicitud/publicación/usuario/oficina/tipo/participante/lugar/dispositivo, los dos mappers, `NotificacionServiceImpl` y `PushNotificationService`).
+
+**Ciclo de vida y transiciones de estado** (`EstadoSolicitud`): toda solicitud nace `PENDIENTE`; un revisor la lleva a `APROBADA` o `RECHAZADA`; una solicitud aprobada se `PUBLICADA` (creando su `PublicacionEvento` visible). Las transiciones se resumen así:
+
+| Método | Transición | Reglas y efectos |
+|--------|-----------|------------------|
+| `crear` | → `PENDIENTE` | Valida horario, permisos de rol, resuelve oficina y tipo, comprueba conflictos, guarda participantes; si hay recurrencia genera la serie; notifica creación. |
+| `aprobar` | `PENDIENTE/RECHAZADA` → `APROBADA` | Fija revisor y `fechaRevision`, limpia `motivoRechazo`; notifica aprobación. Si es maestra de serie, delega en `aprobarSerie`. |
+| `rechazar` | → `RECHAZADA` | Guarda `motivoRechazo`, revisor y fecha; notifica rechazo. Serie → `rechazarSerie`. |
+| `publicar` | `APROBADA/PUBLICADA` → `PUBLICADA` | Crea/actualiza la `PublicacionEvento` (visible), sincroniza la pieza gráfica, notifica por correo y dispara push si el evento es importante. Serie → `publicarSerie`. |
+| `eliminarPublicacion` | `PUBLICADA` → `APROBADA` | Borra la publicación y devuelve la solicitud a aprobada (la despublica sin perderla). |
+| `toggleVisibilidad` | (sin cambiar estado) | Marca la `PublicacionEvento` como visible/oculta. |
+
+**Creación (`crear`).** Valida que `horaFin > horaInicio` (`validarHorario`), que el rol pueda crear eventos (oficina o admin) y resuelve la oficina (un admin puede elegirla con `idOficina`; un usuario de oficina usa la suya). Mapea el request a la entidad, **comprueba conflictos** con `checkConflicts` antes de persistir y guarda participantes. Si el request trae `frecuenciaRecurrencia != NINGUNA` y `fechaFinRecurrencia`, marca la primera como maestra (`esPrincipal = true`), le asigna un `idGrupoRecurrencia` (UUID) y genera las instancias.
+
+**Recurrencia (`generarInstanciasRecurrentes`).** Recorre las fechas según la frecuencia (`DIARIA → plusDays(1)`, `SEMANAL → plusWeeks(1)`, `MENSUAL → plusMonths(1)`) hasta `fechaFinRecurrencia`, con dos salvaguardas de auditoría: la fecha fin es **obligatoria** y el número de instancias se limita a **100** (`MAX_INSTANCIAS`, anti-DoS). Antes de clonar, precarga **de una sola vez** todos los posibles conflictos de la serie con `findConflictsBulk` y luego verifica en memoria fecha a fecha (evitando N+1); si una instancia choca de lugar y horario, aborta la serie con **409 Conflict**. Cada instancia se clona con `esPrincipal = false`, `frecuencia = NINGUNA` y el mismo `idGrupoRecurrencia`.
+
+**Conflictos de lugares (`checkConflicts`).** Para una fecha, los lugares, una franja horaria y un id a excluir, llama a `findConflictsBulk`; si hay choque lanza **409** indicando el lugar y el evento en conflicto. Sólo se consideran solicitudes `APROBADA` o `PUBLICADA` (una solicitud pendiente no reserva el espacio).
+
+**Operaciones sobre series.** `aprobarSerie`, `rechazarSerie`, `publicarSerie`, `eliminarSerie`, `actualizarSerie` y `toggleVisibilidadSerie` aplican la acción a todas las instancias de un `idGrupoRecurrencia` y notifican **una sola vez** (sobre la instancia maestra, con sufijo *"(Serie Completa)"* / *"(Serie de eventos)"*). Al editar la maestra, `propagarCambiosMaster` sincroniza datos y publicaciones de las instancias secundarias, cargando todas sus publicaciones de golpe con `findBySolicitudEventoIdIn` para no incurrir en N+1.
+
+**Notificaciones push de eventos importantes (`triggerImportantEventPush`).** Tras publicar, si `solicitud.esImportante`, recopila todos los tokens FCM distintos y envía un *multicast* con `PushNotificationService`; los errores se capturan y registran sin interrumpir la publicación.
+
+A continuación, un extracto anotado del método **`publicar`**, que materializa la transición `APROBADA → PUBLICADA`:
+
+```java
+@Transactional
+public PublicacionEventoResponse publicar(Long id, PublicacionEventoRequest request, Authentication authentication) {
+    SolicitudEvento solicitud = buscarSolicitud(id);
+
+    // Si es la maestra de una serie, publicar toda la serie y devolver la publicación principal
+    if (solicitud.getEsPrincipal() && solicitud.getIdGrupoRecurrencia() != null) {
+        publicarSerie(solicitud.getIdGrupoRecurrencia(), request, authentication);
+        PublicacionEvento pubPrincipal = publicacionEventoRepository.findBySolicitudEventoId(id)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error al recuperar publicación maestra"));
+        triggerImportantEventPush(pubPrincipal);
+        return publicacionEventoMapper.toResponse(pubPrincipal);
+    }
+
+    // Sólo se publica lo que ya fue aprobado (o se reactualiza lo ya publicado)
+    if (solicitud.getEstado() != EstadoSolicitud.APROBADA && solicitud.getEstado() != EstadoSolicitud.PUBLICADA) {
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Solo puedes publicar una solicitud aprobada");
+    }
+
+    Usuario publicador = obtenerUsuario(authentication);
+    // Reutiliza la publicación si ya existía (re-publicación), o crea una nueva
+    PublicacionEvento publicacion = publicacionEventoRepository.findBySolicitudEventoId(id).orElseGet(PublicacionEvento::new);
+    publicacion.setSolicitudEvento(solicitud);
+    publicacion.setTituloVisible(request.getTituloVisible());
+    publicacion.setDescripcionVisible(request.getDescripcionVisible());
+    publicacion.setPiezaGraficaUrl(request.getPiezaGraficaUrl());
+    publicacion.setFechaPublicacion(request.getFechaPublicacion() != null ? request.getFechaPublicacion() : LocalDateTime.now());
+    publicacion.setVisible(true);
+    publicacion.setUsuarioPublicador(publicador);
+
+    solicitud.setEstado(EstadoSolicitud.PUBLICADA);          // transición de estado
+    solicitudEventoRepository.save(solicitud);
+    PublicacionEvento guardada = publicacionEventoRepository.save(publicacion);
+
+    notificacionService.notificarPublicacionEvento(/* ... datos del evento y correo del solicitante ... */);
+    triggerImportantEventPush(guardada);                     // push FCM si es importante
+    return publicacionEventoMapper.toResponse(guardada);
+}
+```
+
+### 2.7.3 Gestión de anuncios — `SolicitudAnuncioServiceImpl`
+
+Gestiona el ciclo **solicitud → publicación** de anuncios, paralelo al de eventos pero **sin recurrencia ni conflictos de lugar** (un anuncio es vigente durante un rango de fechas, no reserva un espacio en una franja). Métodos principales: `crear` (estado `PENDIENTE`; si el solicitante es `USUARIO_AUTENTICADO_APP` la oficina queda nula), `actualizar` (sólo el autor o un admin), `aprobar`, `rechazar`, `publicar` (crea/actualiza la `PublicacionAnuncio` visible, rellenando título/descripción/pieza desde la solicitud si el request no los trae), `listarPublicados`, `eliminarSolicitud`, `eliminarPublicacion` (revierte a `APROBADA`), `toggleVisibilidad` y `updatePublicacion`. Cada transición delega en `NotificacionServiceImpl` (creación, aprobación, rechazo, publicación). Los listados se "enriquecen" con la visibilidad real consultando las publicaciones por lotes (`findBySolicitudAnuncioIdIn`) para evitar N+1.
+
+### 2.7.4 Notificaciones
+
+**`NotificacionServiceImpl`** — envío de correos **asíncronos**. Todos sus métodos `notificar...` están anotados con **`@Async("notificacionesExecutor")`**, de modo que se ejecutan en el pool de hilos dedicado (ver 2.3.1) y **no bloquean** la petición HTTP que los origina. Tipos de correo cubiertos:
+
+| Método | Disparador | Destinatarios |
+|--------|-----------|---------------|
+| `notificarCreacionEvento` / `notificarCreacionAnuncio` | Nueva solicitud | Buzones de gestión (`university-recipients`). |
+| `notificarAprobacionEvento` / `notificarAprobacionAnuncio` | Aprobación | Correo del solicitante. |
+| `notificarRechazoEvento` / `notificarRechazoAnuncio` | Rechazo (con motivo) | Correo del solicitante. |
+| `notificarPublicacionEvento` / `notificarPublicacionAnuncio` | Publicación | Solicitante + buzones de gestión + lista masiva (`published-recipients`), en **BCC** para proteger la privacidad. |
+| `enviarCorreoPruebaEvento` | Endpoint de prueba | Destinatario indicado. |
+
+El método privado `enviarCorreo` construye un `MimeMessage` (HTML, UTF-8), respeta los interruptores de configuración (`email-enabled`, SMTP configurado, lista de destinatarios no vacía) y, cuando la pieza gráfica apunta a `/archivos/public/`, la incrusta *inline* en el correo (o la adjunta si no es imagen) resolviéndola con `ArchivoServiceImpl`. **Cada envío —exitoso o fallido— se registra en la bitácora** `NotificacionEnviada` (`registrarNotificacion`), incluyendo el motivo del fallo (`EMAIL_DESACTIVADO`, `SMTP_NO_CONFIGURADO`, `SIN_DESTINATARIOS` o el mensaje de la excepción). Dependencias: `JavaMailSender`, `NotificacionEnviadaRepository`, `PlantillaCorreoServiceImpl`, `ArchivoServiceImpl`.
+
+**`PlantillaCorreoServiceImpl`** — renderizado de **plantillas HTML de correo**. Su método `render(nombrePlantilla, variables)` lee el HTML desde `classpath:mail-templates/<nombre>` y sustituye los marcadores `${clave}` por los valores del mapa. Para prevenir inyección de HTML en el correo, **escapa** cada valor con `HtmlUtils.htmlEscape` antes de insertarlo. Si la plantilla no existe, responde **500**.
+
+**`PushNotificationService`** — notificaciones push vía **Firebase Cloud Messaging (FCM)**. En `@PostConstruct init()` inicializa el *Firebase Admin SDK* leyendo `firebase-service-account.json` del classpath; si el archivo no está, registra una advertencia y opera en **modo simulado** (las notificaciones sólo se escriben en el log, útil en desarrollo). `sendMulticastNotification(tokens, title, body, data)` construye un `MulticastMessage` (notificación + *data payload*) y lo envía con `sendEachForMulticast`, registrando los conteos de éxito/fallo. Los errores se capturan y loguean sin propagarse.
+
+### 2.7.5 Reportes
+
+**`ReporteServiceImpl`** — generación y exportación de reportes de gestión. Métodos públicos: `crearReporte` (persiste la definición del reporte: nombre, formato, rango de fechas, alcance, oficina y tipo de evento), `listarReportes` (filtrado por rol — un admin ve todos; una oficina ve los de su oficina o los propios), `obtenerDashboardStats` (estadísticas agregadas para los gráficos del panel, combinando los counts filtrados de eventos y anuncios por tipo, oficina, estado y mes), `generarResumen`, `exportarReporteGenerado` / `exportarPdf` / `exportarXlsx` y `actualizarReporte`. La **exportación a PDF** usa OpenPDF (`com.lowagie.text`) con la paleta de marca GEA (rojo `#CE1126`, grises) y un pie de página personalizado (`PdfPageEventHelper`); la **exportación a XLSX** usa Apache POI (`XSSFWorkbook`) con estilos de celda, cabeceras coloreadas y filas zebra. Valida el rango de fechas y normaliza el formato solicitado. Dependencias: los repositorios de solicitud de evento/anuncio, usuario y `ReporteGeneradoRepository`, más un `EntityManager`.
+
+**`AgendaPdfService`** — exportación de la **agenda de eventos publicados a PDF** (endpoint público de la app móvil). `exportarAgendaPdf(desde, hasta)` valida el rango (no nulo, `hasta >= desde`, máximo **366 días**), obtiene las publicaciones visibles con `findPublicadasEnRango` (usando `plusDays(1)` para que `hasta` sea inclusivo), las **agrupa por día** conservando el orden de la consulta (importancia, fecha, hora) y compone un documento A4 con OpenPDF: encabezado con el rango, un bloque por día con sus eventos, o un mensaje de "sin eventos" si el rango está vacío, y un pie de página de marca (`PieDeAgenda`). Dependencia: `PublicacionEventoRepository`.
+
+### 2.7.6 Archivos — `ArchivoServiceImpl`
+
+Implementa `ArchivoStorageService`: **almacenamiento de archivos** en disco con metadatos en base de datos. En `@PostConstruct` resuelve y crea el directorio de subida (`file.upload-dir`, por defecto `uploads`). `guardar(MultipartFile)`:
+
+1. **Valida** el archivo (`validarArchivo`): tamaño máximo (`file.max-size-bytes`, por defecto 10 MB), extensión permitida (`jpg,jpeg,png,pdf`) y *content-type* permitido (`image/jpeg`, `image/png`, `application/pdf`). Cualquier violación produce **400**.
+2. Sanea el nombre original (`StringUtils.cleanPath`, contra *path traversal*), genera un nombre de almacenamiento único (`UUID` + extensión) y copia el contenido al directorio.
+3. Persiste un `ArchivoAdjunto` con un `tokenAcceso` único (UUID sin guiones) y `publico = true`, y devuelve un `ArchivoResponse` con la URL pública `/archivos/public/<token>`.
+4. **Transaccionalidad disco↔BD**: si falla el guardado de metadatos, borra el archivo del disco para no dejar huérfanos.
+
+`cargarPublicoComoRecurso(token)` valida el token con una expresión regular (`^[a-zA-Z0-9]{20,}$`), busca el metadato público, comprueba que la ruta resuelta no escape del directorio raíz (defensa *path traversal*) y devuelve el `Resource`; ante cualquier fallo entrega un **recurso por defecto** (avatar o imagen de evento) en lugar de propagar el error.
+
+### 2.7.7 Administración
+
+**`UsuarioServiceImpl`** — CRUD de usuarios del panel. `crearUsuario` valida datos básicos y la **unicidad** de correo, teléfono y `microsoftOid`, **encripta la contraseña** con `BCryptPasswordEncoder.encode`, resuelve rol y oficina y fija estado `ACTIVO`. `actualizarUsuario` aplica los cambios (re-encripta la contraseña sólo si llega una nueva) y, de forma crítica para la seguridad, invoca **`customUserDetailsService.invalidarCacheUsuario(correo)`** para **purgar la entrada cacheada** del usuario (`@CacheEvict`) en cuanto cambian su estado o rol, sin esperar al TTL de 45 s de la caché `userDetails` (ver 2.4.4). `resolveOficina` aplica reglas de negocio por rol (Comunicaciones exige la oficina *"Comunicaciones"*; `USUARIO_AUTENTICADO_APP` la oficina *"Usuarios"*). Para romper la dependencia circular con seguridad, `CustomUserDetailsService` se inyecta con `@Lazy`.
+
+**`OficinaServiceImpl`** — `crear` (alta de oficina, `activa = true` por defecto) y `listar` (oficinas activas ordenadas por nombre).
+
+**`LugarFisicoServiceImpl`** (implementa `LugarFisicoService`) — `listarActivos` (lugares activos ordenados, vía mapper) y `obtenerPorId` (404 si no existe).
+
+**`TipoEventoServiceImpl`** — `listarActivos` y `crear` (alta de tipo de evento con color, `activo = true` por defecto).
+
+**`DispositivoUsuarioServiceImpl`** (implementa `DispositivoUsuarioService`) — gestiona los **tokens FCM** del usuario autenticado. `registrarToken` hace *upsert*: si el token ya existe lo reasigna al usuario actual y refresca la fecha; si no, lo crea. `removerToken` elimina el token, validando primero que pertenezca al usuario que lo solicita (**403** en caso contrario).
+
+### 2.7.8 Soporte
+
+**`DashboardServiceImpl`** — métricas y resumen del panel. `resumen(Authentication)` distingue el **alcance** por rol: un administrador/Comunicaciones obtiene cifras **globales** (totales de solicitudes de evento y anuncio por estado, usuarios y oficinas); un usuario de oficina obtiene las cifras **acotadas a su oficina** (`countByOficinaId`, `countByEstadoGroupedByOficina`); cualquier otro rol recibe **403**. Resuelve los conteos por estado con los *counts agrupados* (una sola consulta `GROUP BY` por dominio) y adjunta los próximos 10 eventos reutilizando `SolicitudEventoServiceImpl.listarProximos`.
+
+**`AuditoriaServiceImpl`** — consulta del **historial de cambios** con Hibernate Envers. Expone `historialUsuarios`, `historialSolicitudesEvento` e `historialSolicitudesAnuncio`. El método genérico `historial` obtiene un `AuditReader` del `EntityManager`, verifica que la entidad esté auditada (`isEntityClassAudited`, si no **400**), consulta todas las revisiones de la fila (`forRevisionsOfEntity`) y las mapea a `AuditoriaRevisionResponse` con el número de revisión, la fecha, el **tipo de cambio** (`ADD` / `MOD` / `DEL`) y un resumen legible, ordenadas de la más reciente a la más antigua. Si no hay revisiones, responde **404**.
