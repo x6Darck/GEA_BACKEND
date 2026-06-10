@@ -661,3 +661,236 @@ Implementa `ArchivoStorageService`: **almacenamiento de archivos** en disco con 
 **`DashboardServiceImpl`** — métricas y resumen del panel. `resumen(Authentication)` distingue el **alcance** por rol: un administrador/Comunicaciones obtiene cifras **globales** (totales de solicitudes de evento y anuncio por estado, usuarios y oficinas); un usuario de oficina obtiene las cifras **acotadas a su oficina** (`countByOficinaId`, `countByEstadoGroupedByOficina`); cualquier otro rol recibe **403**. Resuelve los conteos por estado con los *counts agrupados* (una sola consulta `GROUP BY` por dominio) y adjunta los próximos 10 eventos reutilizando `SolicitudEventoServiceImpl.listarProximos`.
 
 **`AuditoriaServiceImpl`** — consulta del **historial de cambios** con Hibernate Envers. Expone `historialUsuarios`, `historialSolicitudesEvento` e `historialSolicitudesAnuncio`. El método genérico `historial` obtiene un `AuditReader` del `EntityManager`, verifica que la entidad esté auditada (`isEntityClassAudited`, si no **400**), consulta todas las revisiones de la fila (`forRevisionsOfEntity`) y las mapea a `AuditoriaRevisionResponse` con el número de revisión, la fecha, el **tipo de cambio** (`ADD` / `MOD` / `DEL`) y un resumen legible, ordenadas de la más reciente a la más antigua. Si no hay revisiones, responde **404**.
+
+
+## 2.8 Capa de controllers (referencia de endpoints)
+
+Los controllers (`controller/`) constituyen la capa de presentación HTTP de GEA. Todos están anotados con `@RestController` y, salvo cuando exponen rutas heterogéneas, declaran su prefijo común con `@RequestMapping`. Todas las rutas que se listan a continuación son **relativas al *context-path* `/api`** (puerto 8083): por ejemplo `POST /auth/login` se invoca realmente como `POST /api/auth/login`.
+
+El patrón es uniforme: el controller recibe la petición, valida el cuerpo entrante con `@Valid` sobre un *DTO Request*, delega en el servicio correspondiente y devuelve el resultado envuelto en `ApiResponse<T>` dentro de un `ResponseEntity`. No contienen lógica de negocio.
+
+La **autorización** se aplica en dos niveles complementarios: a nivel de URL mediante `SecurityConfig` (cadena de filtros) y a nivel de método mediante la anotación `@PreAuthorize("hasAnyRole(...)")`. Los roles del sistema son `SUPER_ADMIN`, `ADMIN`, `COMUNICACIONES`, `OFICINA` y `USUARIO_AUTENTICADO_APP`. En las tablas siguientes, la columna **Roles** indica los roles exigidos por `@PreAuthorize`; cuando aparece *(público / autenticado)* significa que el método no declara `@PreAuthorize` propio y queda regido únicamente por la regla de `SecurityConfig` para esa ruta.
+
+A continuación se documenta cada uno de los 12 controllers con su ruta base y la lista completa de endpoints reales.
+
+### 2.8.1 AuthController (`/auth`)
+
+Autenticación de usuarios. No exige roles: son los puntos de entrada para obtener el token JWT.
+
+| Método | Ruta | Roles | Request | Response | Descripción |
+|--------|------|-------|---------|----------|-------------|
+| POST | `/auth/login` | (público) | `AuthRequest` | `AuthResponse` | Login por correo/contraseña; devuelve el JWT y los datos básicos del usuario. |
+| POST | `/auth/microsoft/mobile` | (público) | `MicrosoftAuthRequest` | `AuthResponse` | Login federado con Microsoft (app móvil): valida el `idToken` y emite el JWT propio de GEA. |
+
+### 2.8.2 UsuarioController (`/admin/usuarios`)
+
+CRUD de usuarios del panel administrativo. Restringido a administradores.
+
+| Método | Ruta | Roles | Request | Response | Descripción |
+|--------|------|-------|---------|----------|-------------|
+| POST | `/admin/usuarios` | SUPER_ADMIN, ADMIN | `UsuarioRequest` | `UsuarioResponse` | Crea un usuario (HTTP 201). Valida unicidad de correo/teléfono y encripta la contraseña. |
+| GET | `/admin/usuarios/{id}` | SUPER_ADMIN, ADMIN | — | `UsuarioResponse` | Obtiene un usuario por id. |
+| PUT | `/admin/usuarios/{id}` | SUPER_ADMIN, ADMIN | `UsuarioRequest` | `UsuarioResponse` | Actualiza un usuario; invalida su entrada en la caché de seguridad. |
+| GET | `/admin/usuarios` | SUPER_ADMIN, ADMIN | query: `q`, `rol`, `estado` | `List<UsuarioResponse>` | Lista usuarios con filtros opcionales por texto, rol y estado. |
+| DELETE | `/admin/usuarios/{id}` | SUPER_ADMIN, ADMIN | — | `Void` | Elimina un usuario. |
+
+### 2.8.3 OficinaController (`/admin/oficinas`)
+
+Gestión de oficinas/programas.
+
+| Método | Ruta | Roles | Request | Response | Descripción |
+|--------|------|-------|---------|----------|-------------|
+| POST | `/admin/oficinas` | SUPER_ADMIN, ADMIN | `OficinaRequest` | `OficinaResponse` | Crea una oficina/programa (HTTP 201). |
+| GET | `/admin/oficinas` | SUPER_ADMIN, ADMIN, COMUNICACIONES, OFICINA, USUARIO_AUTENTICADO_APP | — | `List<OficinaResponse>` | Lista las oficinas activas. |
+
+### 2.8.4 TipoEventoController (`/usuario/tipos-evento`)
+
+Catálogo de tipos de evento (con color).
+
+| Método | Ruta | Roles | Request | Response | Descripción |
+|--------|------|-------|---------|----------|-------------|
+| GET | `/usuario/tipos-evento` | (autenticado) | — | `List<TipoEventoResponse>` | Lista los tipos de evento activos. |
+| POST | `/usuario/tipos-evento` | SUPER_ADMIN, ADMIN, COMUNICACIONES | `TipoEventoRequest` | `TipoEventoResponse` | Crea un tipo de evento (HTTP 201). |
+
+### 2.8.5 LugarFisicoController (`/lugares-fisicos`)
+
+Catálogo de lugares físicos.
+
+| Método | Ruta | Roles | Request | Response | Descripción |
+|--------|------|-------|---------|----------|-------------|
+| GET | `/lugares-fisicos` | (autenticado) | — | `List<LugarFisicoResponse>` | Lista los lugares físicos activos. |
+
+### 2.8.6 DispositivoUsuarioController (`/usuario/dispositivos`)
+
+Registro de tokens FCM (notificaciones push) del usuario autenticado. Usa el `Authentication` del contexto para identificar al dueño del token.
+
+| Método | Ruta | Roles | Request | Response | Descripción |
+|--------|------|-------|---------|----------|-------------|
+| POST | `/usuario/dispositivos/registrar` | (autenticado) | `DispositivoTokenRequest` | `Void` | Registra/reasigna un token FCM al usuario actual (*upsert*). |
+| POST | `/usuario/dispositivos/desregistrar` | (autenticado) | `DispositivoTokenRequest` | `Void` | Elimina un token FCM del usuario actual. |
+
+### 2.8.7 ArchivoController (rutas heterogéneas)
+
+Subida y descarga de archivos. No declara prefijo común (`@RequestMapping` sin valor); cada método define su ruta absoluta.
+
+| Método | Ruta | Roles | Request | Response | Descripción |
+|--------|------|-------|---------|----------|-------------|
+| POST | `/comunicaciones/archivos/upload` | SUPER_ADMIN, COMUNICACIONES, ADMIN, OFICINA, USUARIO_AUTENTICADO_APP | `multipart/form-data` (`archivo`) | `ArchivoResponse` | Sube un archivo y devuelve sus metadatos (incluido el token de acceso público). |
+| GET | `/archivos/public/{tokenAcceso}` | (público) | — | `Resource` (binario) | Descarga pública del archivo por token; detecta el `Content-Type` y aplica defensa *path traversal*. |
+
+### 2.8.8 SolicitudEventoController (rutas heterogéneas)
+
+Ciclo de vida completo de las solicitudes de evento: creación por el solicitante, revisión por Comunicaciones, publicación, series recurrentes y consulta pública de eventos publicados. Sin prefijo común; agrupa rutas bajo `/oficina/...`, `/comunicaciones/...` y `/app/...`.
+
+| Método | Ruta | Roles | Request | Response | Descripción |
+|--------|------|-------|---------|----------|-------------|
+| POST | `/oficina/solicitudes-evento` | SUPER_ADMIN, ADMIN, OFICINA, USUARIO_AUTENTICADO_APP, COMUNICACIONES | `SolicitudEventoRequest` | `SolicitudEventoResponse` | Crea una solicitud de evento (HTTP 201). |
+| GET | `/oficina/solicitudes-evento` | SUPER_ADMIN, ADMIN, OFICINA, USUARIO_AUTENTICADO_APP, COMUNICACIONES | query: `q`, `estado`, `mes`, `anio` | `List<SolicitudEventoResponse>` | Lista las solicitudes propias del usuario, con filtros. |
+| GET | `/oficina/solicitudes-evento/{id}` | SUPER_ADMIN, ADMIN, OFICINA, USUARIO_AUTENTICADO_APP, COMUNICACIONES | — | `SolicitudEventoResponse` | Obtiene una solicitud propia. |
+| PUT | `/oficina/solicitudes-evento/{id}` | SUPER_ADMIN, ADMIN, OFICINA, USUARIO_AUTENTICADO_APP, COMUNICACIONES | `SolicitudEventoRequest` | `SolicitudEventoResponse` | Actualiza una solicitud propia. |
+| DELETE | `/oficina/solicitudes-evento/{id}` | SUPER_ADMIN, ADMIN, OFICINA, USUARIO_AUTENTICADO_APP, COMUNICACIONES | — | `Void` | Elimina una solicitud propia. |
+| DELETE | `/oficina/solicitudes-evento/serie/{idGrupo}` | SUPER_ADMIN, ADMIN, OFICINA, USUARIO_AUTENTICADO_APP, COMUNICACIONES | — | `Void` | Elimina la serie recurrente propia. |
+| GET | `/comunicaciones/solicitudes-evento` | SUPER_ADMIN, COMUNICACIONES, ADMIN | query: `q`, `estado`, `mes`, `anio` | `List<SolicitudEventoResponse>` | Bandeja de revisión: lista todas las solicitudes. |
+| GET | `/comunicaciones/solicitudes-evento/{id}` | SUPER_ADMIN, COMUNICACIONES, ADMIN | — | `SolicitudEventoResponse` | Obtiene una solicitud para revisión. |
+| POST | `/comunicaciones/solicitudes-evento/{id}/aprobar` | SUPER_ADMIN, COMUNICACIONES, ADMIN | — | `SolicitudEventoResponse` | Aprueba la solicitud. |
+| POST | `/comunicaciones/solicitudes-evento/{id}/rechazar` | SUPER_ADMIN, COMUNICACIONES, ADMIN | `RechazoRequest` | `SolicitudEventoResponse` | Rechaza la solicitud con motivo. |
+| POST | `/comunicaciones/solicitudes-evento/{id}/publicar` | SUPER_ADMIN, COMUNICACIONES, ADMIN | `PublicacionEventoRequest` | `PublicacionEventoResponse` | Publica el evento aprobado. |
+| POST | `/comunicaciones/solicitudes-evento/serie/{idGrupo}/aprobar` | SUPER_ADMIN, COMUNICACIONES, ADMIN | — | `Void` | Aprobación masiva de una serie recurrente. |
+| POST | `/comunicaciones/solicitudes-evento/serie/{idGrupo}/publicar` | SUPER_ADMIN, COMUNICACIONES, ADMIN | `PublicacionEventoRequest` | `Void` | Publicación masiva de una serie recurrente. |
+| DELETE | `/comunicaciones/solicitudes-evento/serie/{idGrupo}` | SUPER_ADMIN, COMUNICACIONES, ADMIN | — | `Void` | Elimina una serie recurrente completa. |
+| GET | `/app/eventos/publicados` | (público) | query: `filtro`, `fecha`, `q`, `tipoEvento`, `mes`, `anio` | `List<PublicacionEventoResponse>` | Lista de eventos publicados (consumo de la app). |
+| GET | `/app/eventos/publicados/{id}` | (público) | — | `PublicacionEventoResponse` | Detalle de un evento publicado. |
+| GET | `/app/eventos/proximos` | (público) | query: `limit` (1–50, def. 3), `q` | `List<PublicacionEventoResponse>` | Próximos eventos. |
+| PATCH | `/comunicaciones/eventos-publicados/{id}/visibilidad` | SUPER_ADMIN, COMUNICACIONES, ADMIN | query: `visible` | `PublicacionEventoResponse` | Alterna la visibilidad de un evento publicado. |
+| PUT | `/comunicaciones/eventos-publicados/{id}` | SUPER_ADMIN, COMUNICACIONES, ADMIN | `UpdatePublicacionRequest` | `PublicacionEventoResponse` | Edita un evento publicado. |
+| DELETE | `/comunicaciones/eventos-publicados/{id}` | SUPER_ADMIN, COMUNICACIONES, ADMIN | — | `Void` | Elimina un evento publicado. |
+| GET | `/app/eventos/agenda/export/pdf` | (público) | query: `desde`, `hasta` | `byte[]` (PDF) | Exporta la agenda de eventos a PDF. |
+
+### 2.8.9 SolicitudAnuncioController (rutas heterogéneas)
+
+Ciclo de vida de las solicitudes de anuncio, paralelo al de eventos. Sin prefijo común; agrupa rutas bajo `/app/...` y `/comunicaciones/...`.
+
+| Método | Ruta | Roles | Request | Response | Descripción |
+|--------|------|-------|---------|----------|-------------|
+| POST | `/app/solicitudes-anuncio` | USUARIO_AUTENTICADO_APP, OFICINA, SUPER_ADMIN, COMUNICACIONES, ADMIN | `SolicitudAnuncioRequest` | `SolicitudAnuncioResponse` | Crea una solicitud de anuncio (HTTP 201). |
+| GET | `/app/solicitudes-anuncio/mis-solicitudes` | USUARIO_AUTENTICADO_APP, OFICINA, SUPER_ADMIN, COMUNICACIONES | query: `q`, `estado`, `mes`, `anio` | `List<SolicitudAnuncioResponse>` | Lista las solicitudes propias. |
+| DELETE | `/app/solicitudes-anuncio/{id}` | SUPER_ADMIN, ADMIN, OFICINA, USUARIO_AUTENTICADO_APP, COMUNICACIONES | — | `Void` | Elimina una solicitud propia. |
+| PUT | `/app/solicitudes-anuncio/{id}` | SUPER_ADMIN, ADMIN, OFICINA, USUARIO_AUTENTICADO_APP, COMUNICACIONES | `SolicitudAnuncioRequest` | `SolicitudAnuncioResponse` | Actualiza una solicitud propia. |
+| GET | `/comunicaciones/solicitudes-anuncio` | SUPER_ADMIN, COMUNICACIONES, ADMIN | query: `q`, `estado`, `mes`, `anio` | `List<SolicitudAnuncioResponse>` | Bandeja de revisión de anuncios. |
+| GET | `/comunicaciones/solicitudes-anuncio/{id}` | SUPER_ADMIN, COMUNICACIONES, ADMIN | — | `SolicitudAnuncioResponse` | Obtiene una solicitud para revisión. |
+| POST | `/comunicaciones/solicitudes-anuncio/{id}/aprobar` | SUPER_ADMIN, COMUNICACIONES, ADMIN | — | `SolicitudAnuncioResponse` | Aprueba la solicitud. |
+| POST | `/comunicaciones/solicitudes-anuncio/{id}/rechazar` | SUPER_ADMIN, COMUNICACIONES, ADMIN | `RechazoRequest` | `SolicitudAnuncioResponse` | Rechaza la solicitud con motivo. |
+| POST | `/comunicaciones/solicitudes-anuncio/{id}/publicar` | SUPER_ADMIN, COMUNICACIONES, ADMIN | `PublicacionAnuncioRequest` | `PublicacionAnuncioResponse` | Publica el anuncio aprobado. |
+| GET | `/app/anuncios/publicados` | (público) | query: `q`, `categoria`, `mes`, `anio` | `List<PublicacionAnuncioResponse>` | Lista los anuncios publicados (consumo de la app). |
+| GET | `/app/anuncios/publicados/{id}` | (público) | — | `PublicacionAnuncioResponse` | Detalle de un anuncio publicado. |
+| PATCH | `/comunicaciones/anuncios-publicados/{id}/visibilidad` | SUPER_ADMIN, COMUNICACIONES, ADMIN | query: `visible` | `PublicacionAnuncioResponse` | Alterna la visibilidad de un anuncio publicado. |
+| PUT | `/comunicaciones/anuncios-publicados/{id}` | SUPER_ADMIN, COMUNICACIONES, ADMIN | `UpdatePublicacionRequest` | `PublicacionAnuncioResponse` | Edita un anuncio publicado. |
+| DELETE | `/comunicaciones/anuncios-publicados/{id}` | SUPER_ADMIN, COMUNICACIONES, ADMIN | — | `Void` | Elimina un anuncio publicado. |
+
+### 2.8.10 ReporteController (`/reportes`)
+
+Generación, consulta y exportación de reportes de solicitudes, además de las estadísticas del dashboard analítico.
+
+| Método | Ruta | Roles | Request | Response | Descripción |
+|--------|------|-------|---------|----------|-------------|
+| POST | `/reportes/solicitudes` | COMUNICACIONES, SUPER_ADMIN, ADMIN, OFICINA, USUARIO_AUTENTICADO_APP | `GenerarReporteRequest` | `ReporteGeneradoResponse` | Genera y persiste un reporte. |
+| GET | `/reportes/solicitudes` | COMUNICACIONES, SUPER_ADMIN, ADMIN, OFICINA, USUARIO_AUTENTICADO_APP | query: `idOficina`, `desde`, `hasta` | `List<ReporteGeneradoResponse>` | Lista los reportes generados, con filtros. |
+| GET | `/reportes/solicitudes/resumen` | COMUNICACIONES, SUPER_ADMIN, ADMIN, OFICINA, USUARIO_AUTENTICADO_APP | query: `desde`, `hasta` | `ReporteSolicitudesResponse` | Resumen de solicitudes por rango de fechas. |
+| GET | `/reportes/dashboard` | COMUNICACIONES, SUPER_ADMIN | query: `idOficina`, `desde`, `hasta`, `tipo` | `ReporteDashboardDTO` | KPIs y series para el dashboard analítico. |
+| GET | `/reportes/solicitudes/export/xlsx` | COMUNICACIONES, SUPER_ADMIN, ADMIN | query: `desde`, `hasta` | `byte[]` (XLSX) | Exporta el reporte a Excel (rango máx. 366 días). |
+| GET | `/reportes/solicitudes/export/pdf` | COMUNICACIONES, SUPER_ADMIN, ADMIN | query: `desde`, `hasta` | `byte[]` (PDF) | Exporta el reporte a PDF (rango máx. 366 días). |
+| GET | `/reportes/solicitudes/{id}/export` | COMUNICACIONES, SUPER_ADMIN, ADMIN, OFICINA, USUARIO_AUTENTICADO_APP | — | `byte[]` (PDF/XLSX) | Descarga un reporte guardado en su formato original. |
+| PUT | `/reportes/solicitudes/{id}` | COMUNICACIONES, SUPER_ADMIN, ADMIN, OFICINA, USUARIO_AUTENTICADO_APP | `ActualizarReporteRequest` | `ReporteGeneradoResponse` | Edita el nombre/descripción de un reporte guardado. |
+
+### 2.8.11 DashboardController (`/dashboard`)
+
+Resumen operativo del panel.
+
+| Método | Ruta | Roles | Request | Response | Descripción |
+|--------|------|-------|---------|----------|-------------|
+| GET | `/dashboard/resumen` | SUPER_ADMIN, COMUNICACIONES, ADMIN, OFICINA | — | `DashboardResumenResponse` | Métricas y próximos eventos; el alcance (global vs. oficina) depende del rol. |
+
+### 2.8.12 AuditoriaController (`/admin/auditoria`)
+
+Consulta del historial de cambios (Hibernate Envers).
+
+| Método | Ruta | Roles | Request | Response | Descripción |
+|--------|------|-------|---------|----------|-------------|
+| GET | `/admin/auditoria/usuarios/{id}` | SUPER_ADMIN, ADMIN, COMUNICACIONES | — | `List<AuditoriaRevisionResponse>` | Historial de revisiones de un usuario. |
+| GET | `/admin/auditoria/solicitudes-evento/{id}` | SUPER_ADMIN, ADMIN, COMUNICACIONES | — | `List<AuditoriaRevisionResponse>` | Historial de revisiones de una solicitud de evento. |
+| GET | `/admin/auditoria/solicitudes-anuncio/{id}` | SUPER_ADMIN, ADMIN, COMUNICACIONES | — | `List<AuditoriaRevisionResponse>` | Historial de revisiones de una solicitud de anuncio. |
+
+## 2.9 DTOs (objetos de transferencia)
+
+Los DTOs (`dto/request/` y `dto/response/`) separan el modelo interno (entidades JPA) del contrato externo de la API. Los **Request DTOs** validan la entrada con Bean Validation (`@NotNull`, `@NotBlank`, `@Email`, `@Size`, `@Pattern`, `@FutureOrPresent`, etc.) antes de que el dato llegue a la capa de negocio; los **Response DTOs** moldean la salida, evitando exponer campos sensibles (como el `password`) y desacoplando el esquema de base de datos del JSON público. Casi todos usan Lombok: `@Data` en los request y `@Data @Builder` en los response.
+
+### 2.9.1 DTOs de request (17)
+
+| DTO | Usado por | Campos principales (validaciones) |
+|-----|-----------|-----------------------------------|
+| `AuthRequest` | `POST /auth/login` | `correo` (@NotBlank, @Email), `password` (@NotBlank). |
+| `LoginRequest` | (variante de login) | `correo` (@NotBlank), `password` (@NotBlank). |
+| `MicrosoftAuthRequest` | `POST /auth/microsoft/mobile` | `idToken` (@NotBlank). |
+| `UsuarioRequest` | `UsuarioController` (crear/actualizar) | `nombre` (@NotBlank, 2–120), `correo` (@NotBlank, @Email, ≤120), `telefono` (≤20), `password` (6–100), `idRol`, `rol`, `idOficina`, `authProvider`, `microsoftOid`, `fotoUrl`, `estado`. |
+| `OficinaRequest` | `OficinaController` (crear) | `nombre` (@NotBlank, ≤150), `programaAcademico` (≤200), `descripcion` (≤500), `activa`. |
+| `TipoEventoRequest` | `TipoEventoController` (crear) | `nombre` (@NotBlank), `descripcion`, `colorHex` (@NotBlank, @Pattern hex `#RRGGBB`), `activo`. |
+| `DispositivoTokenRequest` | `DispositivoUsuarioController` | `token` FCM (@NotBlank). |
+| `SolicitudEventoRequest` | `SolicitudEventoController` (crear/actualizar) | `nombreEvento` (@NotBlank), `fechaEvento` (@NotNull, @FutureOrPresent), `horaInicio`/`horaFin` (@NotNull), `tipoEvento` (@NotBlank), `idsLugaresFisicos`, `linkConexion`, `responsableEvento`, recurrencia (`frecuenciaRecurrencia`, `fechaFinRecurrencia`), flags (`requiereTransmision`, `requiereCubrimiento`, `esImportante`, `requierePiezaGrafica`), `idOficina`, `participantes` (@Valid, lista de `SolicitudEventoParticipanteRequest`). |
+| `SolicitudEventoParticipanteRequest` | anidado en `SolicitudEventoRequest` | `nombre` (@NotBlank), `cargo`, `descripcion`, `fotoUrl`, `telefono`, `correo`, `tipo` (@NotNull, `TipoParticipante`). |
+| `SolicitudAnuncioRequest` | `SolicitudAnuncioController` (crear/actualizar) | `titulo` (@NotBlank), `descripcion`, `categoria`, `idsLugaresFisicos`, `correoContacto`, `responsableAnuncio`, `fechaInicioPublicacion`/`fechaFinPublicacion`, `horaInicio`/`horaFin`, `piezaGraficaUrl`, `requierePiezaGrafica`. |
+| `RechazoRequest` | endpoints `.../rechazar` (evento y anuncio) | `motivo` (@NotBlank). |
+| `PublicacionEventoRequest` | endpoints `.../publicar` de evento/serie | `tituloVisible` (@NotBlank), `descripcionVisible`, `piezaGraficaUrl`, `fechaPublicacion`. |
+| `PublicacionAnuncioRequest` | endpoint `.../publicar` de anuncio | `tituloVisible` (@NotBlank), `descripcionVisible`, `piezaGraficaUrl`, `fechaPublicacion`. |
+| `UpdatePublicacionRequest` | edición de publicaciones de evento/anuncio | DTO unificado para editar publicaciones de ambos dominios: campos visibles (`tituloVisible` ≤200, `descripcionVisible`, `piezaGraficaUrl`, `idsLugaresFisicos`), campos de evento (`nombreEvento`, `fechaEvento`, horas, `tipoEvento`, flags), campos de anuncio (`titulo`, `categoria`, fechas de publicación, contacto), `idOficina`, `participantes`. |
+| `GenerarReporteRequest` | `POST /reportes/solicitudes` | `nombre` (@NotBlank), `descripcion`, `formato` (@NotBlank), `alcance` (@NotBlank), `desde`/`hasta` (@NotNull), `idOficina`, `idTipoEvento`. |
+| `ActualizarReporteRequest` | `PUT /reportes/solicitudes/{id}` | `nombre`, `descripcion` (sin validaciones). |
+| `CorreoPruebaRequest` | utilidad de envío de correo de prueba | `destinatario` (@Email, @NotBlank), `titulo`, `lugar`, `oficina`. |
+
+### 2.9.2 DTOs de response (17)
+
+| DTO | Devuelto por | Campos principales |
+|-----|--------------|--------------------|
+| `AuthResponse` | endpoints de `AuthController` | `token` (JWT), `nombre`, `correo`, `rol`, `idOficina`, `oficinaNombre`, `fotoUrl`, `tipo` (def. `"Bearer"`). |
+| `UsuarioResponse` | `UsuarioController` | `id`, `nombre`, `correo`, `telefono`, `estado`, `rol`, `idOficina`, `oficinaNombre`, `authProvider`, `fotoUrl`, fechas y usuarios de auditoría. |
+| `OficinaResponse` | `OficinaController` | `id`, `nombre`, `programaAcademico`, `descripcion`, `activa`. |
+| `TipoEventoResponse` | `TipoEventoController` | `id`, `nombre`, `descripcion`, `colorHex`, `activo`. |
+| `LugarFisicoResponse` | `LugarFisicoController` | `id`, `nombre`, `descripcion`, `capacidad`, `activo`. |
+| `ArchivoResponse` | `ArchivoController` (upload) | `id`, `nombreArchivo`, `nombreOriginal`, `tokenAcceso`, `url`, `contentType`, `tamano`. |
+| `SolicitudEventoResponse` | `SolicitudEventoController` | datos del evento, `estado`, `motivoRechazo`, lugares (`lugar`/`lugares`/`idsLugaresFisicos`), tipo de evento (id/nombre/color), oficina, solicitante, recurrencia (`frecuenciaRecurrencia`, `idGrupoRecurrencia`, `esPrincipal`), `visible`, auditoría y `participantes`. |
+| `SolicitudEventoParticipanteResponse` | anidado en `SolicitudEventoResponse` | `id`, `nombre`, `cargo`, `descripcion`, `fotoUrl`, `telefono`, `correo`, `tipo`. |
+| `SolicitudAnuncioResponse` | `SolicitudAnuncioController` | datos del anuncio, `estado`, `motivoRechazo`, lugares, contacto, fechas/horas de publicación, `visible`, oficina, solicitante (id/correo/nombre) y auditoría. |
+| `PublicacionEventoResponse` | publicaciones de evento (app/comunicaciones) | `id`, `solicitudEventoId`, campos visibles (`tituloVisible`, `descripcionVisible`, `piezaGraficaUrl`), datos del evento, lugares, tipo de evento (id/nombre/color), oficina, `responsableEvento`, flags y `visible`. |
+| `PublicacionAnuncioResponse` | publicaciones de anuncio (app/comunicaciones) | `id`, `solicitudAnuncioId`, campos visibles, `categoria`, lugares, contacto, fechas/horas, `oficinaNombre`, `fechaPublicacion`, `visible`, `requierePiezaGrafica`. |
+| `DashboardResumenResponse` | `DashboardController` | `alcance` y conteos (eventos/anuncios pendientes/aprobados/publicados, totales de usuarios y oficinas) + `proximosEventos` (`List<PublicacionEventoResponse>`). |
+| `ReporteGeneradoResponse` | `ReporteController` | `id`, `nombre`, `descripcion`, `formato`, `desde`/`hasta`, `alcance`, `fechaCreacion`, datos del usuario generador, `idOficina`, `idTipoEvento`. |
+| `ReporteSolicitudesResponse` | `GET /reportes/solicitudes/resumen` | `alcance`, rango de fechas, totales y conteos por estado de eventos y anuncios + `solicitudes` (`List<SolicitudResumenDTO>`). |
+| `ReporteDashboardDTO` | `GET /reportes/dashboard` | KPIs (`totalSolicitudes`, aprobados/pendientes/rechazados, `tasaAprobacion`) y series de gráficas (`eventosPorTipo`, `solicitudesPorMes`, `solicitudesPorOficina`, `tendenciaEstado`) + `solicitudes`. |
+| `SolicitudResumenDTO` | anidado en reportes | `id`, `tipo` (EVENTO/ANUNCIO), `titulo`, `oficina`, `fechaRegistro`, `estado`. |
+| `AuditoriaRevisionResponse` | `AuditoriaController` | `revision`, `fechaRevision`, `tipoCambio` (ADD/MOD/DEL), `resumen` legible. |
+
+> Nota: `ReporteDashboardDTO` referencia además `GrupoDatoDTO` (paquete `dto/common/`) como elemento de las series de gráficas.
+
+### 2.9.3 ApiResponse (envoltorio estándar)
+
+Todas las respuestas JSON de la API se envuelven en el tipo genérico **`ApiResponse<T>`** (paquete `util/`), lo que garantiza un contrato uniforme para el cliente. Su estructura es:
+
+| Campo | Tipo | Significado |
+|-------|------|-------------|
+| `success` | `boolean` | `true` en respuestas correctas, `false` en errores. |
+| `message` | `String` | Mensaje legible (p. ej. *"Usuario creado exitosamente"*). |
+| `data` | `T` | Carga útil: el DTO de respuesta, una lista o `null` (en operaciones sin retorno como los `DELETE`). |
+| `timestamp` | `LocalDateTime` | Momento de generación de la respuesta. |
+
+Ofrece *factory methods* estáticos que los controllers usan de forma sistemática: `ApiResponse.success(data, message)`, `ApiResponse.success(data)` (mensaje por defecto *"Operación exitosa"*) y `ApiResponse.error(message)`. Las respuestas de error se generan de forma centralizada en `GlobalExceptionHandler` (`@RestControllerAdvice`), manteniendo el mismo formato. Las descargas binarias (PDF/XLSX y archivos públicos) son la excepción: devuelven `byte[]`/`Resource` directamente, sin envoltorio, porque su `Content-Type` no es JSON.
+
+## 2.10 Mappers
+
+Los 5 mappers (`mapper/`) traducen entre **entidades JPA y DTOs de respuesta**. Todos están implementados con **MapStruct** (`@Mapper(componentModel = "spring")`): son interfaces y MapStruct genera la implementación en tiempo de compilación, registrándola como bean de Spring para inyectarla en los servicios. La conversión es **unidireccional** (entidad → *DTO Response*); la dirección inversa (Request → entidad) se realiza manualmente en la capa de servicio, donde requiere resolver relaciones (oficina, lugares, tipo de evento) contra la base de datos. Para campos derivados o aplanados, los mappers usan `@Mapping(source = ...)` (navegación de relaciones) y `@Mapping(expression = "java(...)")` (lógica inline, p. ej. concatenar nombres de lugares o resolver la oficina con *fallbacks*).
+
+| Mapper | Entidad → DTO | Qué convierte / detalles |
+|--------|----------------|--------------------------|
+| `LugarFisicoMapper` | `LugarFisico` → `LugarFisicoResponse` | MapStruct. Mapeo directo campo a campo (uno y lista). El más simple, sin `@Mapping` explícitos. |
+| `SolicitudEventoMapper` | `SolicitudEvento` → `SolicitudEventoResponse` (y `SolicitudEventoParticipante` → `SolicitudEventoParticipanteResponse`) | MapStruct. Aplana tipo de evento (`tipoEventoCatalogo` → id/nombre/colorHex), oficina, solicitante y lista de participantes; concatena lugares con expresiones Java; fija `visible = false`. |
+| `SolicitudAnuncioMapper` | `SolicitudAnuncio` → `SolicitudAnuncioResponse` | MapStruct. Resuelve solicitante y oficina con *fallbacks* por expresión (usa contacto/responsable si no hay usuario; ignora la oficina para `USUARIO_AUTENTICADO_APP`); concatena lugares; fija `visible = false`. |
+| `PublicacionEventoMapper` | `PublicacionEvento` → `PublicacionEventoResponse` | MapStruct. Toma los campos del evento desde la `solicitudEvento` asociada (fecha, horas, lugares, tipo, oficina, flags, solicitante). |
+| `PublicacionAnuncioMapper` | `PublicacionAnuncio` → `PublicacionAnuncioResponse` | MapStruct. Toma los campos del anuncio desde la `solicitudAnuncio` asociada; resuelve la oficina con *fallback* al solicitante; concatena lugares. |
