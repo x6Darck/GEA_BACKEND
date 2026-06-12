@@ -20,6 +20,9 @@ import java.util.Map;
 import java.util.Set;
 import java.time.LocalDateTime;
 import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
@@ -65,7 +68,7 @@ public class NotificacionServiceImpl {
                         "titulo", safe(titulo),
                         "solicitante", safe(nombreSolicitante),
                         "oficina", safe(nombreOficina),
-                        "fecha", LocalDateTime.now().toString(),
+                        "fecha", formatFecha(LocalDateTime.now()),
                         "gestionUrl", frontendBaseUrl + "/revision-solicitudes")),
                 null);
     }
@@ -73,7 +76,7 @@ public class NotificacionServiceImpl {
     @Async("notificacionesExecutor")
     public void notificarCreacionAnuncio(Long id, String titulo, String nombreSolicitante, String nombreOficina) {
         log.info("Notificando NUEVA SOLICITUD de anuncio: id={}, titulo={}", id, titulo);
-        
+
         Set<String> destinatarios = parseRecipients(universityRecipients);
         if (destinatarios.isEmpty()) return;
 
@@ -86,7 +89,7 @@ public class NotificacionServiceImpl {
                         "titulo", safe(titulo),
                         "solicitante", safe(nombreSolicitante),
                         "oficina", safe(nombreOficina),
-                        "fecha", LocalDateTime.now().toString(),
+                        "fecha", formatFecha(LocalDateTime.now()),
                         "gestionUrl", frontendBaseUrl + "/revision-anuncios")),
                 null);
     }
@@ -108,7 +111,7 @@ public class NotificacionServiceImpl {
 
         log.info("Destinatarios finales para evento: {}", destinatarios);
 
-        String horario = (horaInicio != null ? horaInicio : "") + " - " + (horaFin != null ? horaFin : "");
+        String horario = formatHoraAmPm(horaInicio) + " - " + formatHoraAmPm(horaFin);
 
         enviarCorreo(
                 "EVENTO_PUBLICADO",
@@ -385,5 +388,19 @@ public class NotificacionServiceImpl {
 
     private String safe(String valor) {
         return valor == null ? "" : valor;
+    }
+
+    private String formatFecha(LocalDateTime dt) {
+        if (dt == null) return "";
+        return dt.format(DateTimeFormatter.ofPattern("d 'de' MMMM 'de' yyyy, HH:mm", new Locale("es", "ES")));
+    }
+
+    private String formatHoraAmPm(String hora) {
+        if (hora == null || hora.isBlank()) return "";
+        try {
+            return LocalTime.parse(hora).format(DateTimeFormatter.ofPattern("hh:mm a", Locale.ENGLISH));
+        } catch (Exception e) {
+            return hora;
+        }
     }
 }
