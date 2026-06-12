@@ -374,6 +374,9 @@ public class SolicitudEventoServiceImpl {
         SolicitudEvento solicitud = buscarSolicitud(id);
         Usuario revisor = obtenerUsuario(authentication);
 
+        checkConflicts(solicitud.getFechaEvento(), solicitud.getLugaresFisicos(),
+                solicitud.getHoraInicio(), solicitud.getHoraFin(), solicitud.getId());
+
         if (solicitud.getEsPrincipal() && solicitud.getIdGrupoRecurrencia() != null) {
             aprobarSerie(solicitud.getIdGrupoRecurrencia(), authentication);
             return enrichResponse(solicitudEventoMapper.toResponse(solicitud));
@@ -430,6 +433,8 @@ public class SolicitudEventoServiceImpl {
 
         for (SolicitudEvento s : serie) {
             if (s.getEstado() == EstadoSolicitud.PENDIENTE || s.getEstado() == EstadoSolicitud.RECHAZADA) {
+                checkConflicts(s.getFechaEvento(), s.getLugaresFisicos(),
+                        s.getHoraInicio(), s.getHoraFin(), s.getId());
                 s.setEstado(EstadoSolicitud.APROBADA);
                 s.setMotivoRechazo(null);
                 s.setUsuarioRevisor(revisor);
